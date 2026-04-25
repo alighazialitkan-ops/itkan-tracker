@@ -41,7 +41,7 @@ export default function AppShell() {
       <main className="pb-8">
         {tab === "log" && <MainLog isViewOnly={isViewOnly} />}
         {tab === "tracker" && <Tracker />}
-        {tab === "dashboard" && <Dashboard />}
+        {tab === "dashboard" && <Dashboard isAdmin={isAdmin} />}
         {tab === "settings" && !isViewOnly && <Settings />}
         {tab === "teams" && isAdmin && <Teams />}
       </main>
