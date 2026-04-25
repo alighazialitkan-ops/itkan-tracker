@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST http://localhost:3003/api/db-setup)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl *)"
+    ]
+  }
+}
