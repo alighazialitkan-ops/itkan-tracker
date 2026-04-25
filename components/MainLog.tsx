@@ -47,8 +47,9 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
 
   const displayed = dayFilter
     ? entries.filter((e) => {
-        const d = new Date(e.date + "T00:00:00");
-        return DAY_NAMES[d.getDay()] === dayFilter;
+        if (!e.date) return false;
+        const d = new Date(String(e.date).slice(0, 10) + "T00:00:00");
+        return !isNaN(d.getTime()) && DAY_NAMES[d.getDay()] === dayFilter;
       })
     : entries;
 

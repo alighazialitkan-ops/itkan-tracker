@@ -1,7 +1,18 @@
 import { DAY_ABBRS } from "./constants";
 
-export function formatDateWithDay(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
+export function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const datePart = String(dateStr).slice(0, 10);
+  const d = new Date(datePart + "T00:00:00");
+  if (isNaN(d.getTime())) return "—";
+  return datePart;
+}
+
+export function formatDateWithDay(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const datePart = String(dateStr).slice(0, 10);
+  const date = new Date(datePart + "T00:00:00");
+  if (isNaN(date.getTime())) return "—";
   const day = DAY_ABBRS[date.getDay()];
   const d = date.getDate().toString().padStart(2, "0");
   const m = (date.getMonth() + 1).toString().padStart(2, "0");

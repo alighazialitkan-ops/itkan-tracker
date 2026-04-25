@@ -29,7 +29,11 @@ export async function GET(req: NextRequest) {
     const order = orderMap[sort] ?? "date DESC, created_at DESC";
 
     const data = await query(`SELECT * FROM entries ${where} ORDER BY ${order}`, params);
-    return NextResponse.json(data);
+    const normalized = data.map((row: Record<string, unknown>) => ({
+      ...row,
+      date: row.date ? String(row.date).slice(0, 10) : null,
+    }));
+    return NextResponse.json(normalized);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -41,11 +45,15 @@ export async function POST(req: NextRequest) {
     const { date, city, engineers, km, weight } = await req.json();
     const rows = await query(
       `INSERT INTO entries (date, city, engineers, km, weight)
-       VALUES ($1, $2, $3, $4, $5)
+       VALUES ($1::date, $2, $3, $4, $5)
        RETURNING *`,
       [date, city, engineers, km ?? 0, weight ?? 1]
     );
-    return NextResponse.json(rows[0], { status: 201 });
+    const row = rows[0] as Record<string, unknown>;
+    return NextResponse.json(
+      { ...row, date: row.date ? String(row.date).slice(0, 10) : null },
+      { status: 201 }
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });

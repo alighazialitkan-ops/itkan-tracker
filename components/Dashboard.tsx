@@ -72,7 +72,8 @@ export default function Dashboard() {
   // Entries by month
   const monthMap = new Map<string, number>();
   for (const e of entries) {
-    const month = e.date.slice(0, 7);
+    const month = e.date ? String(e.date).slice(0, 7) : null;
+    if (!month) continue;
     monthMap.set(month, (monthMap.get(month) || 0) + 1);
   }
   const monthData = [...monthMap.entries()]
