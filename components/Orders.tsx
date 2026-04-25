@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Toast from "./Toast";
+import SerialSearch from "./SerialSearch";
 import type { Order, Asset } from "@/lib/supabase";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -70,6 +71,15 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function UnlockIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round"
+        d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
 // ── Order Modal ───────────────────────────────────────────────────────────────
 
 type ModalProps = {
@@ -96,23 +106,9 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
       : { ...EMPTY_FORM, awbs: [""] }
   );
 
-  const [saving, setSaving]               = useState(false);
-  const [error, setError]                 = useState("");
-  const [siteOverride, setSiteOverride]   = useState(false);
-  const [suggestions, setSuggestions]     = useState<Asset[]>([]);
-  const [showSuggest, setShowSuggest]     = useState(false);
-  const suggestRef  = useRef<HTMLDivElement>(null);
-  const serialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (suggestRef.current && !suggestRef.current.contains(e.target as Node)) {
-        setShowSuggest(false);
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState("");
+  const [siteLocked, setSiteLocked]   = useState(!!order?.serial);
 
   function setField<K extends keyof OrderForm>(key: K, val: OrderForm[K]) {
     setForm((f) => ({ ...f, [key]: val }));
@@ -120,32 +116,22 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
 
   function handleSerialChange(val: string) {
     setField("serial", val);
-    if (!siteOverride) setField("site", "");
-    if (serialTimer.current) clearTimeout(serialTimer.current);
-    if (!val.trim()) { setSuggestions([]); setShowSuggest(false); return; }
-    serialTimer.current = setTimeout(async () => {
-      const r = await fetch(`/api/assets?serial=${encodeURIComponent(val)}`);
-      const json = await r.json();
-      const list: Asset[] = Array.isArray(json) ? json : [];
-      setSuggestions(list);
-      setShowSuggest(list.length > 0);
-    }, 250);
+    if (!val.trim()) {
+      setField("site", "");
+      setSiteLocked(false);
+    }
   }
 
-  function selectAsset(a: Asset) {
+  function handleAssetSelect(a: Asset) {
     setField("serial", a.serial);
     setField("site", a.site);
-    setSiteOverride(false);
-    setShowSuggest(false);
-    setSuggestions([]);
+    setSiteLocked(true);
   }
 
-  function addAwb()           { if (form.awbs.length < 10) setField("awbs", [...form.awbs, ""]); }
+  function addAwb()             { if (form.awbs.length < 10) setField("awbs", [...form.awbs, ""]); }
   function removeAwb(i: number) { setField("awbs", form.awbs.filter((_, idx) => idx !== i)); }
   function updateAwb(i: number, v: string) {
-    const next = [...form.awbs];
-    next[i] = v;
-    setField("awbs", next);
+    const next = [...form.awbs]; next[i] = v; setField("awbs", next);
   }
 
   async function handleSave() {
@@ -171,111 +157,71 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/50 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
 
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b">
-          <h2 className="font-bold text-[#1a2f5e] text-lg">
-            {order ? "Edit Order" : "New Order"}
-          </h2>
+          <h2 className="font-bold text-[#1a2f5e] text-lg">{order ? "Edit Order" : "New Order"}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
-        {/* Body */}
         <div className="p-5 space-y-4 max-h-[72vh] overflow-y-auto">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-3 py-2 rounded-lg">{error}</div>
           )}
 
-          {/* Row 1: Order No + Order Date */}
+          {/* Order No + Date */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Order No *</label>
-              <input
-                className="input"
-                placeholder="e.g. ORD-2025-001"
-                value={form.order_no}
-                onChange={(e) => setField("order_no", e.target.value)}
-              />
+              <input className="input" placeholder="e.g. ORD-2025-001" value={form.order_no} onChange={(e) => setField("order_no", e.target.value)} />
             </div>
             <div>
               <label className="label">Order Date *</label>
-              <input
-                type="date"
-                className="input"
-                value={form.order_date}
-                onChange={(e) => setField("order_date", e.target.value)}
-              />
+              <input type="date" className="input" value={form.order_date} onChange={(e) => setField("order_date", e.target.value)} />
             </div>
           </div>
 
-          {/* Row 2: Case No + Status */}
+          {/* Case No + Status */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Case No</label>
-              <input
-                className="input"
-                placeholder="e.g. CS-1042"
-                value={form.case_no}
-                onChange={(e) => setField("case_no", e.target.value)}
-              />
+              <input className="input" placeholder="e.g. CS-1042" value={form.case_no} onChange={(e) => setField("case_no", e.target.value)} />
             </div>
             <div>
               <label className="label">Status</label>
-              <select
-                className="input"
-                value={form.status}
-                onChange={(e) => setField("status", e.target.value as Status)}
-              >
+              <select className="input" value={form.status} onChange={(e) => setField("status", e.target.value as Status)}>
                 {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
 
-          {/* Row 3: Serial (typeahead) + Site */}
+          {/* Serial (typeahead) + Site (locked) */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="relative" ref={suggestRef}>
+            <div>
               <label className="label">Serial No</label>
-              <input
-                className="input"
-                placeholder="Type to search assets…"
+              <SerialSearch
                 value={form.serial}
-                autoComplete="off"
-                onChange={(e) => handleSerialChange(e.target.value)}
-                onFocus={() => { if (suggestions.length > 0) setShowSuggest(true); }}
+                onChange={handleSerialChange}
+                onSelect={handleAssetSelect}
+                placeholder="Search assets…"
               />
-              {showSuggest && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {suggestions.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onMouseDown={() => selectAsset(a)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0"
-                    >
-                      <span className="font-medium text-[#1a2f5e]">{a.serial}</span>
-                      <span className="text-gray-400 ml-2 text-xs">→ {a.site}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="label mb-0">Site</label>
-                {isAdmin && form.serial && !siteOverride && (
+                {isAdmin && siteLocked && (
                   <button
                     type="button"
-                    onClick={() => setSiteOverride(true)}
-                    className="text-[11px] text-[#c9a84c] font-semibold hover:underline"
+                    onClick={() => setSiteLocked(false)}
+                    className="flex items-center gap-1 text-[11px] text-[#c9a84c] font-semibold hover:underline"
                   >
-                    Override
+                    <UnlockIcon /> Unlock
                   </button>
                 )}
               </div>
               <input
-                className={`input ${!isAdmin && form.serial && !siteOverride ? "bg-gray-50 text-gray-500" : ""}`}
+                className={`input transition-colors ${siteLocked ? "bg-blue-50 text-gray-600" : ""}`}
                 placeholder="Auto-filled from serial"
                 value={form.site}
-                readOnly={!isAdmin && !!form.serial && !siteOverride}
+                readOnly={siteLocked && !isAdmin}
                 onChange={(e) => setField("site", e.target.value)}
               />
             </div>
@@ -285,8 +231,7 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
           <div>
             <label className="label">Part Description</label>
             <textarea
-              className="input resize-none"
-              rows={2}
+              className="input resize-none" rows={2}
               placeholder="Describe the part or item being ordered…"
               value={form.part_description}
               onChange={(e) => setField("part_description", e.target.value)}
@@ -299,18 +244,10 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
             <div className="space-y-2">
               {form.awbs.map((awb, i) => (
                 <div key={i} className="flex gap-2">
-                  <input
-                    className="input"
-                    placeholder={`AWB ${i + 1}`}
-                    value={awb}
-                    onChange={(e) => updateAwb(i, e.target.value)}
-                  />
+                  <input className="input" placeholder={`AWB ${i + 1}`} value={awb} onChange={(e) => updateAwb(i, e.target.value)} />
                   {form.awbs.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeAwb(i)}
-                      className="text-red-400 hover:text-red-600 text-xl w-9 h-9 flex items-center justify-center flex-shrink-0"
-                    >
+                    <button type="button" onClick={() => removeAwb(i)}
+                      className="text-red-400 hover:text-red-600 text-xl w-9 h-9 flex items-center justify-center flex-shrink-0">
                       ×
                     </button>
                   )}
@@ -318,11 +255,8 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
               ))}
             </div>
             {form.awbs.length < 10 && (
-              <button
-                type="button"
-                onClick={addAwb}
-                className="mt-2 text-sm text-[#1a2f5e] font-medium hover:underline flex items-center gap-1"
-              >
+              <button type="button" onClick={addAwb}
+                className="mt-2 text-sm text-[#1a2f5e] font-medium hover:underline flex items-center gap-1">
                 <span className="text-lg leading-none">+</span> Add AWB
               </button>
             )}
@@ -332,8 +266,7 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
           <div>
             <label className="label">Remarks</label>
             <textarea
-              className="input resize-none"
-              rows={2}
+              className="input resize-none" rows={2}
               placeholder='Internal notes, e.g. "To Kirkuk", "Urgent", "On Shelf"…'
               value={form.remarks}
               onChange={(e) => setField("remarks", e.target.value)}
@@ -341,7 +274,6 @@ function OrderModal({ order, isAdmin, onClose, onSaved }: ModalProps) {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-3 px-5 pb-5 pt-3 border-t">
           <button onClick={onClose} className="btn-outline">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="btn-primary">
@@ -390,10 +322,7 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
     await fetch("/api/activity-log", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action, entity: "order", entity_id: entityId,
-        detail: orderNo, username: isAdmin ? "admin" : "user",
-      }),
+      body: JSON.stringify({ action, entity: "order", entity_id: entityId, detail: orderNo, username: isAdmin ? "admin" : "user" }),
     }).catch(() => {});
   }
 
@@ -410,25 +339,21 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  function openEdit(o: Order) { setEditOrder(o); setShowModal(true); }
-  function openNew()          { setEditOrder(null); setShowModal(true); }
-
   return (
     <div className="p-4 lg:p-6 space-y-5">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-[#1a2f5e]">Order Tracking</h1>
           <p className="text-sm text-gray-400 mt-0.5">Spare parts &amp; equipment orders</p>
         </div>
-        <button onClick={openNew} className="btn-primary flex items-center gap-2 text-sm">
-          <span className="text-lg leading-none">+</span>
-          New Order
+        <button onClick={() => { setEditOrder(null); setShowModal(true); }} className="btn-primary flex items-center gap-2 text-sm">
+          <span className="text-lg leading-none">+</span> New Order
         </button>
       </div>
 
-      {/* ── KPI Cards ── */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Total Orders" value={kpi.total}     color="text-[#1a2f5e]" />
         <KpiCard label="Shipped"      value={kpi.shipped}   color="text-purple-700" />
@@ -436,77 +361,26 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
         <KpiCard label="Delivered"    value={kpi.delivered} color="text-green-700" />
       </div>
 
-      {/* ── Filter Bar ── */}
+      {/* Filter Bar */}
       <div className="card">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          <input
-            className="input"
-            placeholder="Order No"
-            value={filters.order_no}
-            onChange={(e) => setFilters((f) => ({ ...f, order_no: e.target.value }))}
-          />
-          <input
-            className="input"
-            placeholder="Case No"
-            value={filters.case_no}
-            onChange={(e) => setFilters((f) => ({ ...f, case_no: e.target.value }))}
-          />
-          <input
-            className="input"
-            placeholder="Serial"
-            value={filters.serial}
-            onChange={(e) => setFilters((f) => ({ ...f, serial: e.target.value }))}
-          />
-          <input
-            className="input"
-            placeholder="Site"
-            value={filters.site}
-            onChange={(e) => setFilters((f) => ({ ...f, site: e.target.value }))}
-          />
-          <select
-            className="input"
-            value={filters.status}
-            onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-          >
+          <input className="input" placeholder="Order No"         value={filters.order_no} onChange={(e) => setFilters((f) => ({ ...f, order_no: e.target.value }))} />
+          <input className="input" placeholder="Case No"          value={filters.case_no}  onChange={(e) => setFilters((f) => ({ ...f, case_no:  e.target.value }))} />
+          <input className="input" placeholder="Serial"           value={filters.serial}   onChange={(e) => setFilters((f) => ({ ...f, serial:   e.target.value }))} />
+          <input className="input" placeholder="Site"             value={filters.site}     onChange={(e) => setFilters((f) => ({ ...f, site:     e.target.value }))} />
+          <select className="input" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
             <option value="">All Statuses</option>
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input
-            className="input"
-            placeholder="AWB"
-            value={filters.awb}
-            onChange={(e) => setFilters((f) => ({ ...f, awb: e.target.value }))}
-          />
-          <input
-            className="input"
-            placeholder="Part Description"
-            value={filters.part}
-            onChange={(e) => setFilters((f) => ({ ...f, part: e.target.value }))}
-          />
-          <input
-            type="date"
-            className="input"
-            title="Date from"
-            value={filters.from}
-            onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
-          />
-          <input
-            type="date"
-            className="input"
-            title="Date to"
-            value={filters.to}
-            onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
-          />
-          <button
-            onClick={() => setFilters(EMPTY_FILTERS)}
-            className="btn-outline text-sm"
-          >
-            Clear Filters
-          </button>
+          <input className="input" placeholder="AWB"              value={filters.awb}  onChange={(e) => setFilters((f) => ({ ...f, awb:  e.target.value }))} />
+          <input className="input" placeholder="Part Description"  value={filters.part} onChange={(e) => setFilters((f) => ({ ...f, part: e.target.value }))} />
+          <input type="date" className="input" title="From" value={filters.from} onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))} />
+          <input type="date" className="input" title="To"   value={filters.to}   onChange={(e) => setFilters((f) => ({ ...f, to:   e.target.value }))} />
+          <button onClick={() => setFilters(EMPTY_FILTERS)} className="btn-outline text-sm">Clear Filters</button>
         </div>
       </div>
 
-      {/* ── Orders Table ── */}
+      {/* Table */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400 text-sm">Loading orders…</div>
@@ -521,81 +395,42 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
             <table className="w-full text-sm">
               <thead className="bg-[#f0f4ff] border-b border-blue-100">
                 <tr>
-                  {[
-                    "Order No", "Order Date", "Case No", "Serial", "Site",
-                    "Part Description", "Status", "AWB(s)", "Remarks", "Actions",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="text-left px-4 py-3 text-xs font-semibold text-[#1a2f5e] uppercase tracking-wide whitespace-nowrap"
-                    >
-                      {h}
-                    </th>
+                  {["Order No", "Order Date", "Case No", "Serial", "Site", "Part Description", "Status", "AWB(s)", "Remarks", "Actions"].map((h) => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-[#1a2f5e] uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-blue-50">
                 {orders.map((o) => (
                   <tr key={o.id} className="hover:bg-blue-50/40 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-[#1a2f5e] whitespace-nowrap">
-                      {o.order_no}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">
-                      {o.order_date}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {o.case_no || <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600">
-                      {o.serial || <span className="text-gray-300 font-sans">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {o.site || <span className="text-gray-300">—</span>}
-                    </td>
+                    <td className="px-4 py-3 font-semibold text-[#1a2f5e] whitespace-nowrap">{o.order_no}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">{o.order_date}</td>
+                    <td className="px-4 py-3 text-gray-600">{o.case_no || <span className="text-gray-300">—</span>}</td>
+                    <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600">{o.serial || <span className="text-gray-300 font-sans">—</span>}</td>
+                    <td className="px-4 py-3 text-gray-600">{o.site || <span className="text-gray-300">—</span>}</td>
                     <td className="px-4 py-3 text-gray-600 max-w-[160px]">
-                      {o.part_description
-                        ? <span className="block truncate" title={o.part_description}>{o.part_description}</span>
-                        : <span className="text-gray-300">—</span>}
+                      {o.part_description ? <span className="block truncate" title={o.part_description}>{o.part_description}</span> : <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <StatusBadge status={o.status} />
-                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={o.status} /></td>
                     <td className="px-4 py-3">
                       {(o.awbs ?? []).length === 0 ? (
                         <span className="text-gray-300">—</span>
                       ) : (
                         <div className="flex flex-wrap gap-1 max-w-[200px]">
                           {o.awbs.map((awb, i) => (
-                            <span
-                              key={i}
-                              className="inline-block text-xs bg-[#1a2f5e]/10 text-[#1a2f5e] px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
-                            >
-                              {awb}
-                            </span>
+                            <span key={i} className="inline-block text-xs bg-[#1a2f5e]/10 text-[#1a2f5e] px-2 py-0.5 rounded-full font-medium whitespace-nowrap">{awb}</span>
                           ))}
                         </div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-500 max-w-[140px]">
-                      {o.remarks
-                        ? <span className="block truncate" title={o.remarks}>{o.remarks}</span>
-                        : <span className="text-gray-300">—</span>}
+                      {o.remarks ? <span className="block truncate" title={o.remarks}>{o.remarks}</span> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 whitespace-nowrap">
-                        <button
-                          onClick={() => openEdit(o)}
-                          className="text-[#1a2f5e] hover:text-[#c9a84c] text-xs font-semibold transition-colors"
-                        >
-                          Edit
-                        </button>
+                        <button onClick={() => { setEditOrder(o); setShowModal(true); }} className="text-[#1a2f5e] hover:text-[#c9a84c] text-xs font-semibold transition-colors">Edit</button>
                         {isAdmin && (
-                          <button
-                            onClick={() => setDeleteId(o.id)}
-                            className="text-red-400 hover:text-red-600 text-xs font-semibold transition-colors"
-                          >
-                            Delete
-                          </button>
+                          <button onClick={() => setDeleteId(o.id)} className="text-red-400 hover:text-red-600 text-xs font-semibold transition-colors">Delete</button>
                         )}
                       </div>
                     </td>
@@ -607,14 +442,12 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
         )}
       </div>
 
-      {/* ── Delete Confirmation ── */}
+      {/* Delete Confirmation */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
             <h3 className="font-bold text-[#1a2f5e] text-lg mb-2">Delete Order?</h3>
-            <p className="text-gray-500 text-sm mb-5">
-              This action cannot be undone. The order and all associated AWBs will be permanently removed.
-            </p>
+            <p className="text-gray-500 text-sm mb-5">This action cannot be undone. The order and all associated AWBs will be permanently removed.</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setDeleteId(null)} className="btn-outline">Cancel</button>
               <button onClick={() => handleDelete(deleteId)} className="btn-danger">Delete</button>
@@ -623,7 +456,7 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
 
-      {/* ── Modal ── */}
+      {/* Modal */}
       {showModal && (
         <OrderModal
           order={editOrder}
@@ -638,10 +471,7 @@ export default function Orders({ isAdmin }: { isAdmin: boolean }) {
         />
       )}
 
-      {/* ── Toast ── */}
-      {toast && (
-        <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />
-      )}
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

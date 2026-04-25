@@ -22,13 +22,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { serial, site } = await req.json();
+    const { serial, site, city, customer } = await req.json();
     if (!serial || !site) return NextResponse.json({ error: "serial and site are required" }, { status: 400 });
     const rows = await query(
-      `INSERT INTO assets (serial, site) VALUES ($1, $2)
-       ON CONFLICT (serial) DO UPDATE SET site = EXCLUDED.site
+      `INSERT INTO assets (serial, site, city, customer) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (serial) DO UPDATE SET site = EXCLUDED.site, city = EXCLUDED.city, customer = EXCLUDED.customer
        RETURNING *`,
-      [serial, site]
+      [serial, site, city || null, customer || null]
     );
     return NextResponse.json(rows[0], { status: 201 });
   } catch (err) {

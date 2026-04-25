@@ -97,3 +97,7 @@ create policy "allow all assets"       on assets       for all using (true) with
 create policy "allow all orders"       on orders       for all using (true) with check (true);
 create policy "allow all order_awbs"   on order_awbs   for all using (true) with check (true);
 create policy "allow all activity_log" on activity_log for all using (true) with check (true);
+
+-- Add city and customer to assets (safe to run multiple times)
+alter table assets add column if not exists city     text;
+alter table assets add column if not exists customer text;

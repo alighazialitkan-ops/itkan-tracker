@@ -64,5 +64,7 @@ export type Asset = {
   id: string;
   serial: string;
   site: string;
+  city: string;
+  customer: string;
   created_at: string;
 };
