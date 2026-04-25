@@ -47,3 +47,53 @@ create policy "allow all admin_config"  on admin_config  for all using (true) wi
 
 -- Enable Realtime for entries
 alter publication supabase_realtime add table entries;
+
+-- ── Order Tracking Module ─────────────────────────────────────────────────────
+
+create table if not exists assets (
+  id         uuid primary key default gen_random_uuid(),
+  serial     text unique not null,
+  site       text not null,
+  created_at timestamp default now()
+);
+
+create table if not exists orders (
+  id               uuid primary key default gen_random_uuid(),
+  order_no         text unique not null,
+  order_date       date not null,
+  case_no          text,
+  serial           text,
+  site             text,
+  part_description text,
+  status           text not null default 'Requested',
+  remarks          text,
+  created_at       timestamp default now(),
+  updated_at       timestamp default now()
+);
+
+create table if not exists order_awbs (
+  id         uuid primary key default gen_random_uuid(),
+  order_id   uuid not null references orders(id) on delete cascade,
+  awb_number text not null,
+  created_at timestamp default now()
+);
+
+create table if not exists activity_log (
+  id         uuid primary key default gen_random_uuid(),
+  action     text not null,
+  entity     text not null,
+  entity_id  uuid,
+  detail     text,
+  username   text,
+  created_at timestamp default now()
+);
+
+alter table assets       enable row level security;
+alter table orders       enable row level security;
+alter table order_awbs   enable row level security;
+alter table activity_log enable row level security;
+
+create policy "allow all assets"       on assets       for all using (true) with check (true);
+create policy "allow all orders"       on orders       for all using (true) with check (true);
+create policy "allow all order_awbs"   on order_awbs   for all using (true) with check (true);
+create policy "allow all activity_log" on activity_log for all using (true) with check (true);

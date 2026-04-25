@@ -44,3 +44,25 @@ export type Exclusion = {
   note: string;
   updated_at: string;
 };
+
+export type Order = {
+  id: string;
+  order_no: string;
+  order_date: string;
+  case_no: string;
+  serial: string;
+  site: string;
+  part_description: string;
+  status: string;
+  remarks: string;
+  awbs: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type Asset = {
+  id: string;
+  serial: string;
+  site: string;
+  created_at: string;
+};
