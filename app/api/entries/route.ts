@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+function toDateStr(val: unknown): string | null {
+  if (!val) return null;
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  return String(val).slice(0, 10);
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -31,7 +37,7 @@ export async function GET(req: NextRequest) {
     const data = await query(`SELECT * FROM entries ${where} ORDER BY ${order}`, params);
     const normalized = data.map((row: Record<string, unknown>) => ({
       ...row,
-      date: row.date ? String(row.date).slice(0, 10) : null,
+      date: toDateStr(row.date),
     }));
     return NextResponse.json(normalized);
   } catch (err) {
@@ -42,7 +48,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { date, city, engineers, km, weight } = await req.json();
+    const body = await req.json();
+    const { date, city, engineers, km, weight } = body;
+    console.log("[POST /api/entries] request body:", body);
     const rows = await query(
       `INSERT INTO entries (date, city, engineers, km, weight)
        VALUES ($1::date, $2, $3, $4, $5)
@@ -50,8 +58,9 @@ export async function POST(req: NextRequest) {
       [date, city, engineers, km ?? 0, weight ?? 1]
     );
     const row = rows[0] as Record<string, unknown>;
+    console.log("[POST /api/entries] DB row returned:", row);
     return NextResponse.json(
-      { ...row, date: row.date ? String(row.date).slice(0, 10) : null },
+      { ...row, date: toDateStr(row.date) },
       { status: 201 }
     );
   } catch (err) {

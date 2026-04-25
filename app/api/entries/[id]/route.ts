@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+function toDateStr(val: unknown): string | null {
+  if (!val) return null;
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  return String(val).slice(0, 10);
+}
+
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { date, city, engineers, km, weight } = await req.json();
@@ -11,7 +17,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     );
     if (!rows.length) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const row = rows[0] as Record<string, unknown>;
-    return NextResponse.json({ ...row, date: row.date ? String(row.date).slice(0, 10) : null });
+    return NextResponse.json({ ...row, date: toDateStr(row.date) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
