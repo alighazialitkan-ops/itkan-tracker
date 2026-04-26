@@ -140,7 +140,7 @@ function BulkAddPanel({ onDone, showToast }: BulkAddProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ serial, site, city: city || null, customer: customer || null }),
         });
-        r.ok ? ok++ : fail++;
+        if (r.ok) { ok++; } else { fail++; }
       } catch { fail++; }
     }
     setImporting(false);
