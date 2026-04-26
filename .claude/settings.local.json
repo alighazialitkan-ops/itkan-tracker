@@ -13,7 +13,8 @@
       "Bash(mkdir -p \"C:/Users/YOGA 7S/Desktop/itkan-tracker/app/api/assets\")",
       "Bash(mkdir -p \"C:/Users/YOGA 7S/Desktop/itkan-tracker/app/api/activity-log\")",
       "Bash(npx next *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(npx eslint *)"
     ]
   }
 }
