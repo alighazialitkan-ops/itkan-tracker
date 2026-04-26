@@ -68,3 +68,28 @@ export type Asset = {
   customer: string;
   created_at: string;
 };
+
+export type DailyLogDetail = {
+  id: string;
+  daily_log_id: string;
+  city: string;
+  engineers: string[];
+  km: number;
+  weight: number;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DailyLog = {
+  id: string;
+  date: string;
+  total_km: number;
+  total_weight: number;
+  engineer_count: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  details: DailyLogDetail[];
+};

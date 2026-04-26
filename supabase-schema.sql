@@ -101,3 +101,83 @@ create policy "allow all activity_log" on activity_log for all using (true) with
 -- Add city and customer to assets (safe to run multiple times)
 alter table assets add column if not exists city     text;
 alter table assets add column if not exists customer text;
+
+-- ── Daily Log Parent-Child Tables (v2) ────────────────────────────────────────
+
+create table if not exists daily_logs (
+  id             uuid primary key default gen_random_uuid(),
+  date           date unique not null,
+  total_km       integer default 0,
+  total_weight   numeric(4,1) default 0,
+  engineer_count integer default 0,
+  created_by     text,
+  created_at     timestamp default now(),
+  updated_at     timestamp default now()
+);
+
+create table if not exists daily_log_details (
+  id           uuid primary key default gen_random_uuid(),
+  daily_log_id uuid references daily_logs(id) on delete cascade,
+  city         text not null,
+  engineers    text[] not null,
+  km           integer default 0,
+  weight       numeric(4,1) default 0,
+  start_date   date,
+  end_date     date,
+  created_at   timestamp default now(),
+  updated_at   timestamp default now()
+);
+
+alter table daily_logs        enable row level security;
+alter table daily_log_details enable row level security;
+
+create policy "allow all daily_logs"        on daily_logs        for all using (true) with check (true);
+create policy "allow all daily_log_details" on daily_log_details for all using (true) with check (true);
+
+-- ── One-time migration from entries → daily_logs + daily_log_details ──────────
+-- Safe to run multiple times: the DO block checks if details are already present.
+
+do $$
+begin
+  if not exists (select 1 from daily_log_details limit 1) then
+
+    -- Parent rows: one per distinct date
+    insert into daily_logs (date, created_at)
+    select distinct date, min(created_at)
+    from entries
+    group by date
+    on conflict (date) do nothing;
+
+    -- Child rows: one per existing entry
+    insert into daily_log_details (daily_log_id, city, engineers, km, weight, start_date, end_date, created_at)
+    select dl.id, e.city, e.engineers, e.km,
+      round(e.weight::numeric * 2) / 2,
+      e.date, e.date, e.created_at
+    from entries e
+    join daily_logs dl on dl.date = e.date;
+
+    -- Recalculate parent km + weight totals
+    update daily_logs dl set
+      total_km     = sub.total_km,
+      total_weight = sub.avg_weight
+    from (
+      select daily_log_id,
+        sum(km)                    as total_km,
+        round(avg(weight) * 2) / 2 as avg_weight
+      from daily_log_details
+      group by daily_log_id
+    ) sub
+    where dl.id = sub.daily_log_id;
+
+    -- Recalculate parent engineer counts
+    update daily_logs dl set
+      engineer_count = sub.cnt
+    from (
+      select daily_log_id, count(distinct eng) as cnt
+      from daily_log_details, lateral unnest(engineers) eng
+      group by daily_log_id
+    ) sub
+    where dl.id = sub.daily_log_id;
+
+  end if;
+end $$;

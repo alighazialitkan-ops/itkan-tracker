@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import type { Entry, Exclusion } from "@/lib/supabase";
+import type { DailyLog, DailyLogDetail, Exclusion } from "@/lib/supabase";
 
 type EngineerStats = {
   name: string;
@@ -15,19 +15,21 @@ type EngineerStats = {
 };
 
 export default function Tracker() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [details, setDetails]     = useState<DailyLogDetail[]>([]);
   const [exclusions, setExclusions] = useState<Exclusion[]>([]);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [search, setSearch]       = useState("");
+  const [loading, setLoading]     = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [eRes, xRes] = await Promise.all([
-        fetch("/api/entries"),
+      const [logsRes, xRes] = await Promise.all([
+        fetch("/api/daily-logs"),
         fetch("/api/exclusions"),
       ]);
-      const eJson = await eRes.json();
-      setEntries(Array.isArray(eJson) ? eJson : []);
+      const logsJson = await logsRes.json();
+      const logs: DailyLog[] = Array.isArray(logsJson) ? logsJson : [];
+      setDetails(logs.flatMap((l) => l.details));
+
       const xJson = await xRes.json();
       setExclusions(Array.isArray(xJson) ? xJson : []);
       setLoading(false);
@@ -37,38 +39,41 @@ export default function Tracker() {
 
   const exclusionMap = new Map(exclusions.map((x) => [x.engineer_name, x]));
 
-  const statsMap = new Map<string, { km: number; standby: number; off: number; weights: number[]; excluded: boolean; note: string }>();
+  const statsMap = new Map<string, {
+    km: number; standby: number; off: number; weights: number[];
+    excluded: boolean; note: string;
+  }>();
 
-  for (const entry of entries) {
-    for (const eng of entry.engineers) {
+  for (const detail of details) {
+    for (const eng of detail.engineers) {
       if (!statsMap.has(eng)) {
         const ex = exclusionMap.get(eng);
         statsMap.set(eng, { km: 0, standby: 0, off: 0, weights: [], excluded: ex?.excluded ?? false, note: ex?.note ?? "" });
       }
       const s = statsMap.get(eng)!;
-      s.km += Number(entry.km);
-      s.weights.push(Number(entry.weight));
-      if (entry.city === "Standby") s.standby++;
-      if (entry.city === "Off") s.off++;
+      s.km += Number(detail.km);
+      s.weights.push(Number(detail.weight));
+      if (detail.city === "Standby") s.standby++;
+      if (detail.city === "Off")     s.off++;
     }
   }
 
-  const active = [...statsMap.entries()].filter(([, s]) => !s.excluded);
-  const avgKm = active.length ? active.reduce((sum, [, s]) => sum + s.km, 0) / active.length : 0;
-  const avgStandby = active.length ? active.reduce((sum, [, s]) => sum + s.standby, 0) / active.length : 0;
-  const distThreshold = avgKm + 500;
+  const active         = [...statsMap.entries()].filter(([, s]) => !s.excluded);
+  const avgKm          = active.length ? active.reduce((sum, [, s]) => sum + s.km, 0) / active.length : 0;
+  const avgStandby     = active.length ? active.reduce((sum, [, s]) => sum + s.standby, 0) / active.length : 0;
+  const distThreshold  = avgKm + 500;
   const standbyThreshold = avgStandby + 5;
 
   const stats: EngineerStats[] = [...statsMap.entries()].map(([name, s]) => ({
     name,
-    totalKm: s.km,
+    totalKm:      s.km,
     standbyCount: s.standby,
-    offCount: s.off,
-    avgWeight: s.weights.length ? +(s.weights.reduce((a: number, b: number) => a + b, 0) / s.weights.length).toFixed(1) : 0,
-    distanceAlert: !s.excluded && s.km >= distThreshold,
-    standbyAlert: !s.excluded && s.standby >= standbyThreshold,
+    offCount:     s.off,
+    avgWeight:    s.weights.length ? +(s.weights.reduce((a, b) => a + b, 0) / s.weights.length).toFixed(1) : 0,
+    distanceAlert:  !s.excluded && s.km >= distThreshold,
+    standbyAlert:   !s.excluded && s.standby >= standbyThreshold,
     excluded: s.excluded,
-    note: s.note,
+    note:     s.note,
   }));
 
   stats.sort((a, b) => b.totalKm - a.totalKm);
@@ -78,8 +83,8 @@ export default function Tracker() {
     ? stats.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
     : stats;
 
-  const overloadCount = stats.filter((s) => s.distanceAlert).length;
-  const standbyAlertCount = stats.filter((s) => s.standbyAlert).length;
+  const overloadCount      = stats.filter((s) => s.distanceAlert).length;
+  const standbyAlertCount  = stats.filter((s) => s.standbyAlert).length;
 
   function rankIcon(i: number, eng: EngineerStats) {
     if (eng.excluded) return null;
@@ -115,7 +120,8 @@ export default function Tracker() {
 
       {/* Search */}
       <div className="flex items-center gap-3">
-        <input className="input max-w-xs" placeholder="Search engineer…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="input max-w-xs" placeholder="Search engineer…" value={search}
+          onChange={(e) => setSearch(e.target.value)} />
         {overloadCount > 0 && (
           <span className="bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded-full">
             {overloadCount} overloaded
@@ -175,7 +181,9 @@ export default function Tracker() {
                   <td className="px-4 py-3 text-center">{eng.standbyCount}</td>
                   <td className="px-4 py-3 text-center">{eng.offCount}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className="bg-purple-100 text-purple-700 text-xs font-semibold px-2 py-0.5 rounded-full">{eng.avgWeight}</span>
+                    <span className="bg-purple-100 text-purple-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                      {eng.avgWeight}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     {eng.excluded ? (

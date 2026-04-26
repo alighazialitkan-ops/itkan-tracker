@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, LabelList,
 } from "recharts";
-import type { Entry, Team, Exclusion } from "@/lib/supabase";
+import type { DailyLog, DailyLogDetail, Team, Exclusion } from "@/lib/supabase";
 import { CITY_NAMES } from "@/lib/constants";
 
 interface Filters {
@@ -26,22 +26,23 @@ function buildMonths() {
 }
 
 export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
-  const [entries, setEntries]         = useState<Entry[]>([]);
-  const [teams, setTeams]             = useState<Team[]>([]);
-  const [exclusions, setExclusions]   = useState<Exclusion[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [filters, setFilters]         = useState<Filters>(EMPTY);
-  const prevFilters                   = useRef("");
-  const months                        = useMemo(buildMonths, []);
+  const [details, setDetails]       = useState<DailyLogDetail[]>([]);
+  const [teams, setTeams]           = useState<Team[]>([]);
+  const [exclusions, setExclusions] = useState<Exclusion[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [filters, setFilters]       = useState<Filters>(EMPTY);
+  const prevFilters                 = useRef("");
+  const months                      = useMemo(buildMonths, []);
 
   useEffect(() => {
     (async () => {
       try {
-        const [eR, tR, xR] = await Promise.all([
-          fetch("/api/entries"), fetch("/api/teams"), fetch("/api/exclusions"),
+        const [logsR, tR, xR] = await Promise.all([
+          fetch("/api/daily-logs"), fetch("/api/teams"), fetch("/api/exclusions"),
         ]);
-        const [eJ, tJ, xJ] = await Promise.all([eR.json(), tR.json(), xR.json()]);
-        setEntries(Array.isArray(eJ) ? eJ : []);
+        const [logsJ, tJ, xJ] = await Promise.all([logsR.json(), tR.json(), xR.json()]);
+        const logs: DailyLog[] = Array.isArray(logsJ) ? logsJ : [];
+        setDetails(logs.flatMap((l) => l.details));
         setTeams(Array.isArray(tJ) ? tJ : []);
         setExclusions(Array.isArray(xJ) ? xJ : []);
       } finally {
@@ -64,38 +65,38 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
   );
 
   const filtered = useMemo(() => {
-    return entries.filter((e) => {
-      const d = e.date || "";
-      if (filters.from && d < filters.from) return false;
-      if (filters.to   && d > filters.to)   return false;
-      if (filters.month && !filters.from && !filters.to && d.slice(0, 7) !== filters.month) return false;
-      if (filters.engineer && !e.engineers.some((n) => n.toLowerCase().includes(filters.engineer.toLowerCase()))) return false;
-      if (filters.city && e.city !== filters.city) return false;
+    return details.filter((d) => {
+      const date = d.start_date || "";
+      if (filters.from  && date < filters.from) return false;
+      if (filters.to    && date > filters.to)   return false;
+      if (filters.month && !filters.from && !filters.to && date.slice(0, 7) !== filters.month) return false;
+      if (filters.engineer && !d.engineers.some((n) => n.toLowerCase().includes(filters.engineer.toLowerCase()))) return false;
+      if (filters.city  && d.city !== filters.city) return false;
       if (filters.team) {
         const t = teams.find((t) => t.name === filters.team);
-        if (!t || !e.engineers.some((n) => t.members.includes(n))) return false;
+        if (!t || !d.engineers.some((n) => t.members.includes(n))) return false;
       }
       return true;
     });
-  }, [entries, filters, teams]);
+  }, [details, filters, teams]);
 
   /* ── KPI ── */
   const kpi = useMemo(() => {
-    const totalAsgn = filtered.reduce((s, e) => s + e.engineers.length, 0);
-    const totalKm   = filtered.reduce((s, e) => s + Number(e.km), 0);
-    const ws        = filtered.map((e) => Number(e.weight)).filter((w) => w > 0);
+    const totalAsgn = filtered.reduce((s, d) => s + d.engineers.length, 0);
+    const totalKm   = filtered.reduce((s, d) => s + Number(d.km), 0);
+    const ws        = filtered.map((d) => Number(d.weight)).filter((w) => w > 0);
     const avgLoad   = ws.length ? ws.reduce((a, b) => a + b, 0) / ws.length : 0;
-    const active    = new Set(filtered.flatMap((e) => e.engineers).filter((n) => !excludedSet.has(n))).size;
+    const active    = new Set(filtered.flatMap((d) => d.engineers).filter((n) => !excludedSet.has(n))).size;
     return { totalAsgn, totalKm, avgLoad, active };
   }, [filtered, excludedSet]);
 
   /* ── Chart 1: KM per engineer ── */
   const kmData = useMemo(() => {
     const m = new Map<string, number>();
-    for (const e of filtered)
-      for (const n of e.engineers)
-        if (!excludedSet.has(n) && e.city !== "Standby" && e.city !== "Off")
-          m.set(n, (m.get(n) || 0) + Number(e.km));
+    for (const d of filtered)
+      for (const n of d.engineers)
+        if (!excludedSet.has(n) && d.city !== "Standby" && d.city !== "Off")
+          m.set(n, (m.get(n) || 0) + Number(d.km));
 
     const vals = [...m.values()];
     const avg  = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
@@ -104,29 +105,24 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
     return [...m.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
-      .map(([name, km]) => ({
-        name: name.split(" ")[0],
-        fullName: name,
-        km,
-        overloaded: km >= threshold,
-      }));
+      .map(([name, km]) => ({ name: name.split(" ")[0], fullName: name, km, overloaded: km >= threshold }));
   }, [filtered, excludedSet]);
 
   /* ── Chart 2: Assignments per city ── */
   const cityData = useMemo(() => {
     const m = new Map<string, number>();
-    for (const e of filtered)
-      if (e.city !== "Standby" && e.city !== "Off")
-        m.set(e.city, (m.get(e.city) || 0) + 1);
+    for (const d of filtered)
+      if (d.city !== "Standby" && d.city !== "Off")
+        m.set(d.city, (m.get(d.city) || 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([city, count]) => ({ city, count }));
   }, [filtered]);
 
   /* ── Chart 3: Standby count per engineer ── */
   const standbyData = useMemo(() => {
     const m = new Map<string, number>();
-    for (const e of filtered)
-      if (e.city === "Standby")
-        for (const n of e.engineers)
+    for (const d of filtered)
+      if (d.city === "Standby")
+        for (const n of d.engineers)
           if (!excludedSet.has(n)) m.set(n, (m.get(n) || 0) + 1);
 
     const vals = [...m.values()];
@@ -142,11 +138,11 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
   /* ── Chart 4: Avg weight per engineer ── */
   const weightData = useMemo(() => {
     const m = new Map<string, number[]>();
-    for (const e of filtered)
-      for (const n of e.engineers)
+    for (const d of filtered)
+      for (const n of d.engineers)
         if (!excludedSet.has(n)) {
           if (!m.has(n)) m.set(n, []);
-          m.get(n)!.push(Number(e.weight));
+          m.get(n)!.push(Number(d.weight));
         }
     return [...m.entries()]
       .map(([name, ws]) => ({
@@ -160,7 +156,7 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
   function setF<K extends keyof Filters>(key: K, val: Filters[K]) {
     setFilters((f) => {
       const next = { ...f, [key]: val };
-      if (key === "month" && val)              { next.from = ""; next.to = ""; }
+      if (key === "month" && val)               { next.from = ""; next.to = ""; }
       if ((key === "from" || key === "to") && val) next.month = "";
       return next;
     });
@@ -187,14 +183,10 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total Assignments" value={kpi.totalAsgn.toLocaleString()} color="#1a2f5e"
-          icon={<ClipboardIcon />} />
-        <KpiCard label="Total KM Covered"  value={kpi.totalKm.toLocaleString()}   color="#c9a84c"
-          icon={<RouteIcon />} />
-        <KpiCard label="Avg Load Score"    value={kpi.avgLoad.toFixed(2)}          color="#6366f1"
-          icon={<BoltIcon />} />
-        <KpiCard label="Active Engineers"  value={kpi.active.toLocaleString()}     color="#10b981"
-          icon={<UsersIcon />} />
+        <KpiCard label="Total Assignments" value={kpi.totalAsgn.toLocaleString()} color="#1a2f5e"  icon={<ClipboardIcon />} />
+        <KpiCard label="Total KM Covered"  value={kpi.totalKm.toLocaleString()}   color="#c9a84c"  icon={<RouteIcon />} />
+        <KpiCard label="Avg Load Score"    value={kpi.avgLoad.toFixed(2)}          color="#6366f1"  icon={<BoltIcon />} />
+        <KpiCard label="Active Engineers"  value={kpi.active.toLocaleString()}     color="#10b981"  icon={<UsersIcon />} />
       </div>
 
       {/* ── Filters ── */}
@@ -248,17 +240,15 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
         )}
       </div>
 
-      {/* ── Charts 2-column grid ── */}
+      {/* ── Charts ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-        {/* Chart 1 — KM per Engineer */}
         <ChartCard title="KM per Engineer" subtitle="top 20 · overloaded in red">
           {kmData.length === 0 ? <EmptyState /> : (
             <ScrollableChart dataLength={kmData.length}>
               <BarChart data={kmData} margin={{ top: 20, right: 10, left: 0, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5eaf5" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }}
-                  angle={-40} textAnchor="end" interval={0} />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }} angle={-40} textAnchor="end" interval={0} />
                 <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                 <Tooltip
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -269,23 +259,19 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
                   <LabelList dataKey="km" position="top" style={{ fontSize: 9, fill: "#6b7280" }}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     formatter={(v: any) => Number(v) >= 1000 ? `${(Number(v) / 1000).toFixed(1)}k` : v} />
-                  {kmData.map((d, i) => (
-                    <Cell key={i} fill={d.overloaded ? "#ef4444" : "#1a2f5e"} />
-                  ))}
+                  {kmData.map((d, i) => <Cell key={i} fill={d.overloaded ? "#ef4444" : "#1a2f5e"} />)}
                 </Bar>
               </BarChart>
             </ScrollableChart>
           )}
         </ChartCard>
 
-        {/* Chart 2 — Assignments per City */}
         <ChartCard title="Assignments per City" subtitle="excluding Standby & Off">
           {cityData.length === 0 ? <EmptyState /> : (
             <ScrollableChart dataLength={cityData.length}>
               <BarChart data={cityData} margin={{ top: 20, right: 10, left: 0, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5eaf5" vertical={false} />
-                <XAxis dataKey="city" tick={{ fontSize: 10, fill: "#6b7280" }}
-                  angle={-40} textAnchor="end" interval={0} />
+                <XAxis dataKey="city" tick={{ fontSize: 10, fill: "#6b7280" }} angle={-40} textAnchor="end" interval={0} />
                 <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                 <Tooltip
                   formatter={(v: unknown) => [Number(v).toLocaleString(), "Assignments"]}
@@ -299,14 +285,12 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
           )}
         </ChartCard>
 
-        {/* Chart 3 — Standby Count per Engineer */}
         <ChartCard title="Standby Count per Engineer" subtitle="alert threshold: avg + 5">
           {standbyData.length === 0 ? <EmptyState /> : (
             <ScrollableChart dataLength={standbyData.length}>
               <BarChart data={standbyData} margin={{ top: 20, right: 10, left: 0, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5eaf5" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }}
-                  angle={-40} textAnchor="end" interval={0} />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }} angle={-40} textAnchor="end" interval={0} />
                 <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                 <Tooltip
                   formatter={(v: unknown) => [Number(v).toLocaleString(), "Standby days"]}
@@ -314,24 +298,20 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
                 />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                   <LabelList dataKey="count" position="top" style={{ fontSize: 9, fill: "#6b7280" }} />
-                  {standbyData.map((d, i) => (
-                    <Cell key={i} fill={d.alert ? "#ef4444" : "#d68910"} />
-                  ))}
+                  {standbyData.map((d, i) => <Cell key={i} fill={d.alert ? "#ef4444" : "#d68910"} />)}
                 </Bar>
               </BarChart>
             </ScrollableChart>
           )}
         </ChartCard>
 
-        {/* Chart 4 — Avg Weight Score per Engineer */}
-        <ChartCard title="Avg Weight Score per Engineer" subtitle="scale 1–9">
+        <ChartCard title="Avg Weight per Engineer" subtitle="rounded to nearest 0.5">
           {weightData.length === 0 ? <EmptyState /> : (
             <ScrollableChart dataLength={weightData.length}>
               <BarChart data={weightData} margin={{ top: 20, right: 10, left: 0, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5eaf5" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }}
-                  angle={-40} textAnchor="end" interval={0} />
-                <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} domain={[0, 9]} />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6b7280" }} angle={-40} textAnchor="end" interval={0} />
+                <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
                 <Tooltip
                   formatter={(v: unknown) => [Number(v).toFixed(2), "Avg weight"]}
                   contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5eaf5" }}
@@ -351,9 +331,7 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
 
 /* ── Shared sub-components ── */
 
-function ChartCard({ title, subtitle, children }: {
-  title: string; subtitle?: string; children: React.ReactNode;
-}) {
+function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="card">
       <div className="mb-3">
@@ -365,9 +343,7 @@ function ChartCard({ title, subtitle, children }: {
   );
 }
 
-function ScrollableChart({ children, dataLength }: {
-  children: React.ReactNode; dataLength: number;
-}) {
+function ScrollableChart({ children, dataLength }: { children: React.ReactNode; dataLength: number }) {
   const minWidth = Math.max(300, dataLength * 36);
   return (
     <div className="overflow-x-auto">
@@ -392,9 +368,7 @@ function EmptyState() {
   );
 }
 
-function KpiCard({ label, value, color, icon }: {
-  label: string; value: string; color: string; icon: React.ReactNode;
-}) {
+function KpiCard({ label, value, color, icon }: { label: string; value: string; color: string; icon: React.ReactNode }) {
   return (
     <div className="card flex items-start gap-3 py-4">
       <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -409,7 +383,6 @@ function KpiCard({ label, value, color, icon }: {
   );
 }
 
-/* ── KPI Icons ── */
 function ClipboardIcon() {
   return (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

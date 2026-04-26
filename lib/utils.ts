@@ -62,6 +62,14 @@ export function getTopFrequentEngineers(limit = 10): string[] {
     .map(([name]) => name);
 }
 
+export function formatShortDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const date = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
+  if (isNaN(date.getTime())) return "—";
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[date.getMonth()]} ${date.getDate().toString().padStart(2, "0")}`;
+}
+
 export function seedFrequencyFromEntries(engineers: string[][]): void {
   if (typeof window === "undefined") return;
   if (localStorage.getItem("engineerFrequencySeeded")) return;
