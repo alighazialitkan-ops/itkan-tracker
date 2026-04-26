@@ -14,7 +14,8 @@
       "Bash(mkdir -p \"C:/Users/YOGA 7S/Desktop/itkan-tracker/app/api/activity-log\")",
       "Bash(npx next *)",
       "Bash(git stash *)",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(npx kill-port *)"
     ]
   }
 }

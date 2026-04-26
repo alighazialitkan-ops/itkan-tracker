@@ -78,6 +78,7 @@ function AssetModal({ asset, onClose, onSaved, showToast }: AssetModalProps) {
                 onChange={(v) => setField("serial", v)}
                 onSelect={(a) => setForm({ serial: a.serial, site: a.site, city: a.city ?? "", customer: a.customer ?? "" })}
                 placeholder="Type to search or enter new…"
+                allowNew
               />
             )}
           </div>
@@ -129,22 +130,29 @@ function BulkAddPanel({ onDone, showToast }: BulkAddProps) {
     if (!lines.length) return;
     setImporting(true);
     setResult("");
-    let ok = 0; let fail = 0;
+    let ok = 0;
+    const errors: string[] = [];
     for (const line of lines) {
-      const parts = line.split(",").map((p) => p.trim());
+      const sep   = line.includes("|") ? "|" : ",";
+      const parts = line.split(sep).map((p) => p.trim());
       const [serial, site, city, customer] = parts;
-      if (!serial || !site) { fail++; continue; }
+      if (!serial || !site) { errors.push(`"${line}" — missing serial or site`); continue; }
       try {
-        const r = await fetch("/api/assets", {
+        const r    = await fetch("/api/assets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ serial, site, city: city || null, customer: customer || null }),
         });
-        if (r.ok) { ok++; } else { fail++; }
-      } catch { fail++; }
+        if (r.ok) {
+          ok++;
+        } else {
+          const j = await r.json().catch(() => ({}));
+          errors.push(`"${serial}" — ${j?.error ?? "failed"}`);
+        }
+      } catch { errors.push(`"${serial}" — network error`); }
     }
     setImporting(false);
-    setResult(`✓ ${ok} added${fail > 0 ? ` · ${fail} failed` : ""}`);
+    setResult(`✓ ${ok} added${errors.length > 0 ? `\n${errors.join("\n")}` : ""}`);
     if (ok > 0) {
       showToast(`${ok} asset${ok > 1 ? "s" : ""} imported`, "success");
       onDone();
@@ -168,7 +176,7 @@ function BulkAddPanel({ onDone, showToast }: BulkAddProps) {
         <button onClick={handleImport} disabled={importing || !text.trim()} className="btn-primary text-sm">
           {importing ? "Importing…" : "Import"}
         </button>
-        {result && <span className="text-sm font-medium text-green-700">{result}</span>}
+        {result && <pre className="text-xs font-mono whitespace-pre-wrap text-green-700">{result}</pre>}
       </div>
     </div>
   );

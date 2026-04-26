@@ -8,6 +8,7 @@ type Props = {
   onSelect: (asset: Asset) => void;
   placeholder?: string;
   autoFocus?: boolean;
+  allowNew?: boolean;
 };
 
 function DbIcon({ loading }: { loading: boolean }) {
@@ -22,7 +23,7 @@ function DbIcon({ loading }: { loading: boolean }) {
   );
 }
 
-export default function SerialSearch({ value, onChange, onSelect, placeholder, autoFocus }: Props) {
+export default function SerialSearch({ value, onChange, onSelect, placeholder, autoFocus, allowNew }: Props) {
   const [suggestions, setSuggestions] = useState<Asset[]>([]);
   const [loading, setLoading]         = useState(false);
   const [notFound, setNotFound]       = useState(false);
@@ -112,7 +113,7 @@ export default function SerialSearch({ value, onChange, onSelect, placeholder, a
         </div>
       )}
 
-      {notFound && !showDrop && value.trim() && (
+      {notFound && !showDrop && value.trim() && !allowNew && (
         <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
           <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />

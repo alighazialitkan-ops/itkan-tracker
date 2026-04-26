@@ -1,6 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+let _ordersReady = false;
+async function ensureOrdersTables() {
+  if (_ordersReady) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_no         TEXT UNIQUE NOT NULL,
+      order_date       DATE NOT NULL,
+      case_no          TEXT,
+      serial           TEXT,
+      site             TEXT,
+      part_description TEXT,
+      status           TEXT NOT NULL DEFAULT 'Requested',
+      remarks          TEXT,
+      created_at       TIMESTAMP DEFAULT NOW(),
+      updated_at       TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS order_awbs (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_id   UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      awb_number TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  _ordersReady = true;
+}
+
 function toDateStr(val: unknown): string | null {
   if (!val) return null;
   if (val instanceof Date) return val.toISOString().slice(0, 10);
@@ -9,6 +38,7 @@ function toDateStr(val: unknown): string | null {
 
 export async function GET(req: NextRequest) {
   try {
+    await ensureOrdersTables();
     const { searchParams } = new URL(req.url);
     const order_no = searchParams.get("order_no");
     const case_no  = searchParams.get("case_no");
@@ -62,6 +92,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureOrdersTables();
     const body = await req.json();
     const { order_no, order_date, case_no, serial, site, part_description, status, remarks, awbs = [] } = body;
 

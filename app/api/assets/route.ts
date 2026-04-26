@@ -1,8 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+let _assetsReady = false;
+async function ensureAssetsTable() {
+  if (_assetsReady) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS assets (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      serial     TEXT UNIQUE NOT NULL,
+      site       TEXT NOT NULL,
+      city       TEXT,
+      customer   TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  _assetsReady = true;
+}
+
 export async function GET(req: NextRequest) {
   try {
+    await ensureAssetsTable();
     const { searchParams } = new URL(req.url);
     const serial = searchParams.get("serial");
     if (serial) {
@@ -22,6 +39,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureAssetsTable();
     const { serial, site, city, customer } = await req.json();
     if (!serial || !site) return NextResponse.json({ error: "serial and site are required" }, { status: 400 });
     const rows = await query(

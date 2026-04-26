@@ -123,13 +123,24 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showAdmin, setShowAdmin]   = useState(false);
   const [showShare, setShowShare]   = useState(false);
+  const [zoom, setZoom]             = useState(1);
 
   useEffect(() => {
     if (sessionStorage.getItem("isAdmin")) setIsAdmin(true);
     const params = new URLSearchParams(window.location.search);
     if (params.get("mode") === "view") setIsViewOnly(true);
     if (window.innerWidth < 1024) setCollapsed(true);
+    const saved = parseFloat(localStorage.getItem("zoom") ?? "1");
+    if (!isNaN(saved)) setZoom(saved);
   }, []);
+
+  function changeZoom(delta: number) {
+    setZoom((z) => {
+      const next = Math.min(1.3, Math.max(0.5, Math.round((z + delta) * 10) / 10));
+      localStorage.setItem("zoom", String(next));
+      return next;
+    });
+  }
 
   function handleAdminChange(v: boolean) {
     setIsAdmin(v);
@@ -272,11 +283,13 @@ export default function AppShell() {
           <div className="flex items-center gap-1.5">
             {isAdmin    && <span className="text-[10px] bg-red-500   text-white px-2 py-0.5 rounded-full font-semibold">Admin</span>}
             {isViewOnly && <span className="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold">View Only</span>}
+            <button onClick={() => changeZoom(-0.1)} className="w-7 h-7 rounded bg-gray-100 text-gray-600 font-bold text-base flex items-center justify-center hover:bg-gray-200">−</button>
+            <button onClick={() => changeZoom(+0.1)} className="w-7 h-7 rounded bg-gray-100 text-gray-600 font-bold text-base flex items-center justify-center hover:bg-gray-200">+</button>
           </div>
         </div>
 
         {/* Tab content */}
-        <main className="flex-1 pb-8">
+        <main className="flex-1 pb-8" style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: `${100 / zoom}%` }}>
           {tab === "log"       && <MainLog isViewOnly={isViewOnly} />}
           {tab === "tracker"   && <Tracker />}
           {tab === "dashboard" && <Dashboard isAdmin={isAdmin} />}
