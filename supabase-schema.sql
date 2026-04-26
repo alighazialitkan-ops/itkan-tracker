@@ -181,3 +181,60 @@ begin
 
   end if;
 end $$;
+
+-- ── Fix: deduplicate daily_logs (one row per date) ────────────────────────────
+-- Run this if you see duplicate parent date rows in the Main Log.
+-- Safe to run multiple times: no-op when no duplicates exist.
+
+do $dedup$
+begin
+  -- Ensure UNIQUE constraint exists (may be missing on older installs)
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'daily_logs_date_key'
+      and conrelid = 'daily_logs'::regclass
+  ) then
+    alter table daily_logs add constraint daily_logs_date_key unique (date);
+  end if;
+
+  if exists (select 1 from daily_logs group by date having count(*) > 1) then
+    -- Reassign children from duplicate parents to canonical (earliest) parent
+    update daily_log_details
+    set daily_log_id = canon.id
+    from (
+      select distinct on (date) id, date
+      from daily_logs
+      order by date, created_at asc
+    ) canon
+    join daily_logs dup on dup.date = canon.date and dup.id <> canon.id
+    where daily_log_details.daily_log_id = dup.id;
+
+    -- Delete the now-empty duplicate parents
+    delete from daily_logs
+    using (
+      select distinct on (date) id as cid, date
+      from daily_logs
+      order by date, created_at asc
+    ) canon
+    where daily_logs.date = canon.date
+      and daily_logs.id   <> canon.cid;
+
+    -- Recalculate totals on surviving parents
+    update daily_logs dl set
+      total_km       = agg.km,
+      total_weight   = agg.wt,
+      engineer_count = agg.eng_cnt,
+      updated_at     = now()
+    from (
+      select
+        dld.daily_log_id,
+        coalesce(sum(dld.km), 0)                    as km,
+        round(coalesce(avg(dld.weight), 0) * 2) / 2 as wt,
+        count(distinct eng)                          as eng_cnt
+      from daily_log_details dld,
+           lateral unnest(dld.engineers) eng
+      group by dld.daily_log_id
+    ) agg
+    where dl.id = agg.daily_log_id;
+  end if;
+end $dedup$;

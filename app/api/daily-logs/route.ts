@@ -55,13 +55,18 @@ export async function GET(req: NextRequest) {
       ORDER BY ${orderCol} ${orderDir}, dl.created_at, dld.created_at
     `, params);
 
-    const logsMap = new Map<string, DailyLog>();
+    // Group by date (not log_id) so that duplicate daily_logs rows for the
+    // same date are merged into a single parent entry in the response.
+    // The SQL orders by dl.created_at ASC so the canonical (oldest) log_id
+    // for each date is always encountered first.
+    const logsMap = new Map<string, DailyLog>(); // key = date string
     for (const r of rows as Record<string, unknown>[]) {
-      const logId = String(r.log_id);
-      if (!logsMap.has(logId)) {
-        logsMap.set(logId, {
+      const date   = toDateStr(r.date);
+      const logId  = String(r.log_id);
+      if (!logsMap.has(date)) {
+        logsMap.set(date, {
           id: logId,
-          date: toDateStr(r.date),
+          date,
           total_km: Number(r.total_km) || 0,
           total_weight: Number(r.total_weight) || 0,
           engineer_count: Number(r.engineer_count) || 0,
@@ -84,7 +89,7 @@ export async function GET(req: NextRequest) {
           created_at: String(r.detail_created_at ?? ""),
           updated_at: String(r.detail_updated_at ?? ""),
         };
-        logsMap.get(logId)!.details.push(detail);
+        logsMap.get(date)!.details.push(detail);
       }
     }
 
