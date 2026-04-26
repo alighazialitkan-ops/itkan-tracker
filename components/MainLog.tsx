@@ -57,11 +57,6 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
 
   /* ── aggregate stats ── */
   const allDetails = displayedLogs.flatMap((l) => l.details);
-  const totalKm   = allDetails.reduce((s, d) => s + Number(d.km), 0);
-  const avgWeight = allDetails.length
-    ? (allDetails.reduce((s, d) => s + Number(d.weight), 0) / allDetails.length).toFixed(1)
-    : "0";
-  const activeEng = new Set(allDetails.flatMap((d) => d.engineers)).size;
 
   /* ── per-engineer insight maps ── */
   const engKm      = new Map<string, number>();
@@ -302,9 +297,6 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                 const isCollapsed = collapsed.has(log.id);
                 const logKm  = log.details.reduce((s, d) => s + Number(d.km), 0);
                 const logEng = new Set(log.details.flatMap((d) => d.engineers)).size;
-                const logWt  = log.details.length
-                  ? Math.round(log.details.reduce((s, d) => s + Number(d.weight), 0) / log.details.length * 2) / 2
-                  : 0;
 
                 return (
                   <>
