@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { ensureDailyLogTables } from "@/lib/daily-log-helpers";
 import type { DailyLog, DailyLogDetail } from "@/lib/supabase";
 
 function toDateStr(val: unknown): string {
@@ -10,6 +11,7 @@ function toDateStr(val: unknown): string {
 
 export async function GET(req: NextRequest) {
   try {
+    await ensureDailyLogTables();
     const { searchParams } = new URL(req.url);
     const from     = searchParams.get("from");
     const to       = searchParams.get("to");

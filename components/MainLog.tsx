@@ -23,7 +23,7 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
   const [defaultDate, setDefaultDate]   = useState<string | undefined>(undefined);
   const [editDayLog, setEditDayLog]     = useState<DailyLog | null>(null);
   const [toast, setToast]               = useState<{ msg: string; type: "success" | "error" } | null>(null);
-  const [filters, setFilters]           = useState({ from: "", to: "", city: "", engineer: "", sort: "date_desc" });
+  const [filters, setFilters]           = useState({ from: "", to: "", city: "", engineer: "", sort: "date_asc" });
   const [dayFilter, setDayFilter]       = useState("");
   const [monthSel, setMonthSel]         = useState("");
   const [collapsed, setCollapsed]       = useState<Set<string>>(new Set());
@@ -40,6 +40,7 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
     const json = await r.json();
     const data: DailyLog[] = Array.isArray(json) ? json : [];
     setLogs(data);
+    setCollapsed(new Set(data.map((l) => l.id)));
     setLoading(false);
     seedFrequencyFromEntries(data.flatMap((log) => log.details.map((d) => d.engineers)));
   }, [filters]);
@@ -62,6 +63,29 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
     : "0";
   const activeEng = new Set(allDetails.flatMap((d) => d.engineers)).size;
 
+  /* ── per-engineer insight maps ── */
+  const engKm      = new Map<string, number>();
+  const engAssign  = new Map<string, number>();
+  const engStandby = new Map<string, number>();
+  const engWeight  = new Map<string, { sum: number; cnt: number }>();
+  for (const d of allDetails) {
+    for (const e of d.engineers) {
+      engKm.set(e,      (engKm.get(e)      ?? 0) + Number(d.km));
+      engAssign.set(e,  (engAssign.get(e)  ?? 0) + 1);
+      if (d.city === "Standby") engStandby.set(e, (engStandby.get(e) ?? 0) + 1);
+      const w = engWeight.get(e) ?? { sum: 0, cnt: 0 };
+      engWeight.set(e, { sum: w.sum + Number(d.weight), cnt: w.cnt + 1 });
+    }
+  }
+  const topOf = (m: Map<string, number>) => m.size ? [...m.entries()].sort((a, b) => b[1] - a[1])[0][0] : "—";
+  const insightTopKm      = topOf(engKm);
+  const insightOverloaded = topOf(engAssign);
+  const insightStandby    = topOf(engStandby);
+  const insightAssigned   = topOf(engAssign);
+  const insightWeight     = engWeight.size
+    ? [...engWeight.entries()].sort((a, b) => b[1].sum / b[1].cnt - a[1].sum / a[1].cnt)[0][0]
+    : "—";
+
   /* ── filter helpers ── */
   function handleMonthChange(val: string) {
     setMonthSel(val);
@@ -72,7 +96,7 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
   }
 
   function clearFilters() {
-    setFilters({ from: "", to: "", city: "", engineer: "", sort: "date_desc" });
+    setFilters({ from: "", to: "", city: "", engineer: "", sort: "date_asc" });
     setDayFilter("");
     setMonthSel("");
   }
@@ -112,12 +136,18 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
       if (!res.ok) { setToast({ msg: "Failed to update entry", type: "error" }); return; }
       setToast({ msg: "Entry updated", type: "success" });
     } else {
+      console.log("[AddEntry] payload:", data);
       const res = await fetch("/api/daily-logs/details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) { setToast({ msg: "Failed to add entry", type: "error" }); return; }
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error("[AddEntry] API error:", res.status, errBody);
+        setToast({ msg: errBody?.error ?? "Failed to add entry", type: "error" });
+        return;
+      }
       setToast({ msg: "Entry added", type: "success" });
     }
     setShowEntryModal(false);
@@ -148,16 +178,17 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
   return (
     <div className="max-w-7xl mx-auto p-4 space-y-4">
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Insight Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: "Total Days",       value: displayedLogs.length,     color: "text-[#1a2f5e]" },
-          { label: "Total KM",         value: totalKm.toLocaleString(), color: "text-[#c9a84c]" },
-          { label: "Avg Weight",       value: avgWeight,                color: "text-purple-600" },
-          { label: "Active Engineers", value: activeEng,                color: "text-green-600" },
+          { label: "Top KM",          value: insightTopKm,      color: "text-[#c9a84c]" },
+          { label: "Overloaded",      value: insightOverloaded, color: "text-red-500"    },
+          { label: "Most Standby",    value: insightStandby,    color: "text-gray-500"   },
+          { label: "Most Assigned",   value: insightAssigned,   color: "text-[#1a2f5e]" },
+          { label: "Highest Weight",  value: insightWeight,     color: "text-purple-600" },
         ].map((s) => (
           <div key={s.label} className="card text-center">
-            <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+            <div className={`text-lg font-bold truncate ${s.color}`}>{s.value}</div>
             <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
           </div>
         ))}
@@ -225,12 +256,14 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
 
       {/* Table header row */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-[#1a2f5e]">
-          Daily Log{" "}
-          <span className="text-sm font-normal text-gray-500">
-            ({displayedLogs.length} {displayedLogs.length === 1 ? "day" : "days"} · {allDetails.length} entries)
-          </span>
-        </h2>
+        <div>
+          <h2 className="text-lg font-bold text-[#1a2f5e]">
+            Daily Log{" "}
+            <span className="text-sm font-normal text-gray-500">
+              ({displayedLogs.length} {displayedLogs.length === 1 ? "day" : "days"} · {allDetails.length} entries)
+            </span>
+          </h2>
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={expandAll}   className="btn-outline text-xs px-3 py-1.5">Expand All</button>
           <button onClick={collapseAll} className="btn-outline text-xs px-3 py-1.5">Collapse All</button>
@@ -298,12 +331,8 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                       </td>
                       {/* KM */}
                       <td className="px-4 py-3 font-bold text-[#c9a84c]">{logKm.toLocaleString()}</td>
-                      {/* Weight */}
-                      <td className="px-4 py-3">
-                        <span className="inline-block bg-purple-100 text-purple-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                          {logWt.toFixed(1)}
-                        </span>
-                      </td>
+                      {/* Weight — empty on parent row */}
+                      <td className="px-4 py-3" />
                       {/* Entries count */}
                       <td className="px-4 py-3 text-gray-500 text-xs">
                         {log.details.length} {log.details.length === 1 ? "entry" : "entries"}
@@ -374,7 +403,7 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                             {/* Period */}
                             <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
                               {isMultiDay
-                                ? `${formatShortDate(detail.start_date)} → ${formatShortDate(detail.end_date)}`
+                                ? `${formatShortDate(detail.start_date)} → ${formatShortDate(detail.end_date)} (${Math.round((new Date(detail.end_date).getTime() - new Date(detail.start_date).getTime()) / 86400000) + 1} days)`
                                 : "—"}
                             </td>
                             {/* Row actions */}

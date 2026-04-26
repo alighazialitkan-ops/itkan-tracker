@@ -39,12 +39,12 @@ export async function PUT(
 
     const rows = await query(
       `UPDATE daily_log_details
-       SET city=$1, engineers=$2, km=$3, weight=$4,
+       SET city=$1, engineers=$2::text[], km=$3, weight=$4,
            start_date=$5::date, end_date=$6::date,
            daily_log_id=$7, updated_at=now()
        WHERE id=$8
        RETURNING *`,
-      [city, engineers, km ?? 0, roundedWeight, start_date, effectiveEnd, newLogId, params.id]
+      [city, Array.isArray(engineers) ? engineers.filter((e: string) => e.trim()) : [], km ?? 0, roundedWeight, start_date, effectiveEnd, newLogId, params.id]
     );
 
     if (!rows.length) return NextResponse.json({ error: "Not found" }, { status: 404 });

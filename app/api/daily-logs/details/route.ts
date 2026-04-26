@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { recalcParent, logActivity } from "@/lib/daily-log-helpers";
+import { ensureDailyLogTables, recalcParent, logActivity } from "@/lib/daily-log-helpers";
 
 function roundToHalf(value: number): number {
   return Math.round(value * 2) / 2;
@@ -14,6 +14,7 @@ function toDateStr(val: unknown): string {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureDailyLogTables();
     const body = await req.json();
     const { city, engineers, km, weight, start_date, end_date } = body;
     const roundedWeight = roundToHalf(Number(weight) || 0);
@@ -31,9 +32,9 @@ export async function POST(req: NextRequest) {
     const detailRows = await query(
       `INSERT INTO daily_log_details
          (daily_log_id, city, engineers, km, weight, start_date, end_date)
-       VALUES ($1, $2, $3, $4, $5, $6::date, $7::date)
+       VALUES ($1, $2, $3::text[], $4, $5, $6::date, $7::date)
        RETURNING *`,
-      [dailyLogId, city, engineers, km ?? 0, roundedWeight, start_date, effectiveEnd]
+      [dailyLogId, city, Array.isArray(engineers) ? engineers.filter((e: string) => e.trim()) : [], km ?? 0, roundedWeight, start_date, effectiveEnd]
     );
 
     await recalcParent(dailyLogId);
