@@ -15,7 +15,13 @@
       "Bash(npx next *)",
       "Bash(git stash *)",
       "Bash(npx eslint *)",
-      "Bash(npx kill-port *)"
+      "Bash(npx kill-port *)",
+      "Bash(claude doctor *)",
+      "Bash(npx claude *)",
+      "PowerShell(claude doctor *)",
+      "Bash(where claude *)",
+      "Bash(claude --version)",
+      "Bash(npm i *)"
     ]
   }
 }

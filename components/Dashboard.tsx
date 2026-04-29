@@ -82,12 +82,26 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
 
   /* ── KPI ── */
   const kpi = useMemo(() => {
-    const totalAsgn = filtered.reduce((s, d) => s + d.engineers.length, 0);
-    const totalKm   = filtered.reduce((s, d) => s + Number(d.km), 0);
-    const ws        = filtered.map((d) => Number(d.weight)).filter((w) => w > 0);
-    const avgLoad   = ws.length ? ws.reduce((a, b) => a + b, 0) / ws.length : 0;
-    const active    = new Set(filtered.flatMap((d) => d.engineers).filter((n) => !excludedSet.has(n))).size;
-    return { totalAsgn, totalKm, avgLoad, active };
+    const kmMap = new Map<string, number>();
+    const standbyMap = new Map<string, number>();
+    for (const d of filtered) {
+      for (const n of d.engineers) {
+        if (excludedSet.has(n)) continue;
+        kmMap.set(n, (kmMap.get(n) || 0) + Number(d.km));
+        if (d.city === "Standby") standbyMap.set(n, (standbyMap.get(n) || 0) + 1);
+      }
+    }
+    const kmEntries = [...kmMap.entries()].sort((a, b) => b[1] - a[1]);
+    const sbEntries = [...standbyMap.entries()].sort((a, b) => b[1] - a[1]);
+    const topDist    = kmEntries[0]  ? { name: kmEntries[0][0],  val: kmEntries[0][1].toLocaleString() + " km" }  : null;
+    const mostSb     = sbEntries[0]  ? { name: sbEntries[0][0],  val: sbEntries[0][1] + " days" }                 : null;
+    const vals = kmEntries.map(([, v]) => v);
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const threshold = avg + 500;
+    const overloaded = kmEntries.filter(([, v]) => v >= threshold);
+    const mostOver   = overloaded[0] ? { name: overloaded[0][0], val: overloaded[0][1].toLocaleString() + " km" } : null;
+    const lowestLoad = kmEntries[kmEntries.length - 1] ? { name: kmEntries[kmEntries.length - 1][0], val: kmEntries[kmEntries.length - 1][1].toLocaleString() + " km" } : null;
+    return { topDist, mostSb, mostOver, lowestLoad };
   }, [filtered, excludedSet]);
 
   /* ── Chart 1: KM per engineer ── */
@@ -183,10 +197,10 @@ export default function Dashboard({ isAdmin = false }: { isAdmin?: boolean }) {
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total Assignments" value={kpi.totalAsgn.toLocaleString()} color="#1a2f5e"  icon={<ClipboardIcon />} />
-        <KpiCard label="Total KM Covered"  value={kpi.totalKm.toLocaleString()}   color="#c9a84c"  icon={<RouteIcon />} />
-        <KpiCard label="Avg Load Score"    value={kpi.avgLoad.toFixed(2)}          color="#6366f1"  icon={<BoltIcon />} />
-        <KpiCard label="Active Engineers"  value={kpi.active.toLocaleString()}     color="#10b981"  icon={<UsersIcon />} />
+        <KpiCard label="Top Distance"     name={kpi.topDist?.name}    value={kpi.topDist?.val    ?? "—"} color="#1a2f5e" icon={<RouteIcon />} />
+        <KpiCard label="Most Standby"     name={kpi.mostSb?.name}     value={kpi.mostSb?.val     ?? "—"} color="#c9a84c" icon={<BoltIcon />} />
+        <KpiCard label="Most Overloaded"  name={kpi.mostOver?.name}   value={kpi.mostOver?.val   ?? "—"} color="#ef4444" icon={<ClipboardIcon />} />
+        <KpiCard label="Lowest Load"      name={kpi.lowestLoad?.name} value={kpi.lowestLoad?.val ?? "—"} color="#10b981" icon={<UsersIcon />} />
       </div>
 
       {/* ── Filters ── */}
@@ -368,7 +382,7 @@ function EmptyState() {
   );
 }
 
-function KpiCard({ label, value, color, icon }: { label: string; value: string; color: string; icon: React.ReactNode }) {
+function KpiCard({ label, name, value, color, icon }: { label: string; name?: string; value: string; color: string; icon: React.ReactNode }) {
   return (
     <div className="card flex items-start gap-3 py-4">
       <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -377,7 +391,8 @@ function KpiCard({ label, value, color, icon }: { label: string; value: string; 
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">{label}</p>
-        <p className="text-xl font-bold mt-0.5 leading-none" style={{ color }}>{value}</p>
+        {name && <p className="text-xs font-semibold text-gray-700 mt-0.5 truncate">{name}</p>}
+        <p className="text-lg font-bold leading-none mt-0.5" style={{ color }}>{value}</p>
       </div>
     </div>
   );

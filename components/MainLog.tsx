@@ -27,6 +27,7 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
   const [dayFilter, setDayFilter]       = useState("");
   const [monthSel, setMonthSel]         = useState("");
   const [collapsed, setCollapsed]       = useState<Set<string>>(new Set());
+  const [colSort, setColSort]           = useState<{ col: "km" | "sb" | "off"; dir: "asc" | "desc" } | null>(null);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -54,6 +55,25 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
         return !isNaN(d.getTime()) && DAY_NAMES[d.getDay()] === dayFilter;
       })
     : logs;
+
+  /* ── client-side column sort ── */
+  function toggleColSort(col: "km" | "sb" | "off") {
+    setColSort((prev) =>
+      prev?.col === col
+        ? { col, dir: prev.dir === "desc" ? "asc" : "desc" }
+        : { col, dir: "desc" }
+    );
+  }
+  const sortedLogs = colSort
+    ? [...displayedLogs].sort((a, b) => {
+        const val = (log: DailyLog) => {
+          if (colSort.col === "km")  return log.details.reduce((s, d) => s + Number(d.km), 0);
+          if (colSort.col === "sb")  return log.details.filter((d) => d.city === "Standby").length;
+          return log.details.filter((d) => d.city === "Off").length;
+        };
+        return colSort.dir === "desc" ? val(b) - val(a) : val(a) - val(b);
+      })
+    : displayedLogs;
 
   /* ── aggregate stats ── */
   const allDetails = displayedLogs.flatMap((l) => l.details);
@@ -284,7 +304,15 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
               <tr>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Date / City</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Engineers</th>
-                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">KM</th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleColSort("km")}>
+                  KM <span className="ml-0.5">{colSort?.col === "km" ? (colSort.dir === "desc" ? "▼" : "▲") : "⇅"}</span>
+                </th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleColSort("sb")}>
+                  SB <span className="ml-0.5">{colSort?.col === "sb" ? (colSort.dir === "desc" ? "▼" : "▲") : "⇅"}</span>
+                </th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleColSort("off")}>
+                  OFF <span className="ml-0.5">{colSort?.col === "off" ? (colSort.dir === "desc" ? "▼" : "▲") : "⇅"}</span>
+                </th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Weight</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Entries / Period</th>
                 {!isViewOnly && (
@@ -293,9 +321,11 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
               </tr>
             </thead>
             <tbody>
-              {displayedLogs.map((log) => {
+              {sortedLogs.map((log) => {
                 const isCollapsed = collapsed.has(log.id);
                 const logKm  = log.details.reduce((s, d) => s + Number(d.km), 0);
+                const logSb  = log.details.filter((d) => d.city === "Standby").length;
+                const logOff = log.details.filter((d) => d.city === "Off").length;
                 const logEng = new Set(log.details.flatMap((d) => d.engineers)).size;
 
                 return (
@@ -323,6 +353,10 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                       </td>
                       {/* KM */}
                       <td className="px-4 py-3 font-bold text-[#c9a84c]">{logKm.toLocaleString()}</td>
+                      {/* SB */}
+                      <td className="px-4 py-3 font-semibold text-amber-600">{logSb > 0 ? logSb : <span className="text-gray-300">0</span>}</td>
+                      {/* OFF */}
+                      <td className="px-4 py-3 font-semibold text-gray-500">{logOff > 0 ? logOff : <span className="text-gray-300">0</span>}</td>
                       {/* Weight — empty on parent row */}
                       <td className="px-4 py-3" />
                       {/* Entries count */}
@@ -386,6 +420,9 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                             <td className="px-4 py-2.5 font-semibold text-[#1a2f5e]">
                               {Number(detail.km).toLocaleString()}
                             </td>
+                            {/* SB / OFF — empty on child rows */}
+                            <td className="px-4 py-2.5" />
+                            <td className="px-4 py-2.5" />
                             {/* Weight */}
                             <td className="px-4 py-2.5">
                               <span className="inline-block bg-purple-100 text-purple-700 text-xs font-semibold px-2 py-0.5 rounded-full">

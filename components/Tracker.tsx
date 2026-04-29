@@ -19,6 +19,8 @@ export default function Tracker() {
   const [exclusions, setExclusions] = useState<Exclusion[]>([]);
   const [search, setSearch]       = useState("");
   const [loading, setLoading]     = useState(true);
+  const [sortCol, setSortCol]     = useState<"totalKm" | "standbyCount" | "offCount" | "avgWeight" | null>(null);
+  const [sortDir, setSortDir]     = useState<"desc" | "asc">("desc");
 
   useEffect(() => {
     async function load() {
@@ -76,8 +78,21 @@ export default function Tracker() {
     note:     s.note,
   }));
 
-  stats.sort((a, b) => b.totalKm - a.totalKm);
-  const maxKm = stats[0]?.totalKm || 1;
+  function handleSort(col: "totalKm" | "standbyCount" | "offCount" | "avgWeight") {
+    if (sortCol === col) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortCol(col); setSortDir("desc"); }
+  }
+
+  function SortIcon({ col }: { col: "totalKm" | "standbyCount" | "offCount" | "avgWeight" }) {
+    if (sortCol !== col) return <span className="ml-1 text-gray-300">↕</span>;
+    return <span className="ml-1 text-[#1a2f5e]">{sortDir === "desc" ? "↓" : "↑"}</span>;
+  }
+
+  stats.sort((a, b) => {
+    if (!sortCol) return b.totalKm - a.totalKm;
+    return sortDir === "desc" ? b[sortCol] - a[sortCol] : a[sortCol] - b[sortCol];
+  });
+  const maxKm = stats.reduce((m, s) => Math.max(m, s.totalKm), 1);
 
   const filtered = search
     ? stats.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
@@ -149,11 +164,11 @@ export default function Tracker() {
               <tr>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Rank</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Engineer</th>
-                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Total KM</th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort("totalKm")}>Total KM<SortIcon col="totalKm" /></th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider min-w-[140px]">KM Progress</th>
-                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Standby</th>
-                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">OFF</th>
-                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Avg Weight</th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort("standbyCount")}>Standby<SortIcon col="standbyCount" /></th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort("offCount")}>OFF<SortIcon col="offCount" /></th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => handleSort("avgWeight")}>Avg Weight<SortIcon col="avgWeight" /></th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Distance Alert</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Standby Alert</th>
               </tr>

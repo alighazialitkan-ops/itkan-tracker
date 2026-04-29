@@ -3,6 +3,12 @@ import { useState, useRef, useEffect } from "react";
 import { ENGINEERS } from "@/lib/constants";
 import { getTopFrequentEngineers } from "@/lib/utils";
 
+let _engineerCache: string[] | null = null;
+
+export function invalidateEngineerCache() {
+  _engineerCache = null;
+}
+
 type EngineerSearchProps = {
   value: string;
   onChange: (v: string) => void;
@@ -14,9 +20,24 @@ type EngineerSearchProps = {
 export default function EngineerSearch({ value, onChange, exclude = [], placeholder = "Search engineer…", autoFocus }: EngineerSearchProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value);
+  const [engineerList, setEngineerList] = useState<string[]>(_engineerCache ?? ENGINEERS);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    if (_engineerCache) { setEngineerList(_engineerCache); return; }
+    fetch("/api/engineers")
+      .then((r) => r.json())
+      .then((data: unknown) => {
+        if (Array.isArray(data)) {
+          const names = (data as { name: string }[]).map((e) => e.name).sort();
+          _engineerCache = names;
+          setEngineerList(names);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -30,7 +51,7 @@ export default function EngineerSearch({ value, onChange, exclude = [], placehol
     (e) => !exclude.includes(e) && e.toLowerCase().includes(query.toLowerCase())
   );
 
-  const filtered = ENGINEERS.filter(
+  const filtered = engineerList.filter(
     (e) => !exclude.includes(e) && e.toLowerCase().includes(query.toLowerCase())
   );
 

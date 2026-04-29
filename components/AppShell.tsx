@@ -294,7 +294,7 @@ export default function AppShell() {
           {tab === "tracker"   && <Tracker />}
           {tab === "dashboard" && <Dashboard isAdmin={isAdmin} />}
           {tab === "orders"    && <Orders isAdmin={isAdmin} />}
-          {tab === "settings"  && !isViewOnly && <Settings />}
+          {tab === "settings"  && !isViewOnly && <Settings isAdmin={isAdmin} />}
           {tab === "teams"     && isAdmin && <Teams />}
         </main>
       </div>

@@ -4,6 +4,7 @@ import { ENGINEERS } from "@/lib/constants";
 import type { Entry, Exclusion, Asset } from "@/lib/supabase";
 import SerialSearch from "./SerialSearch";
 import Toast from "./Toast";
+import { invalidateEngineerCache } from "./EngineerSearch";
 
 // ── Iraqi cities for assets dropdown ─────────────────────────────────────────
 const ASSET_CITIES = [
@@ -186,7 +187,7 @@ function BulkAddPanel({ onDone, showToast }: BulkAddProps) {
 
 type SettingsTab = "engineers" | "assets";
 
-export default function Settings() {
+export default function Settings({ isAdmin = false }: { isAdmin?: boolean }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("engineers");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
@@ -211,7 +212,7 @@ export default function Settings() {
         ))}
       </div>
 
-      {activeTab === "engineers" && <EngineerAlerts showToast={showToast} />}
+      {activeTab === "engineers" && <EngineerAlerts showToast={showToast} isAdmin={isAdmin} />}
       {activeTab === "assets"    && <AssetsManager showToast={showToast} />}
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
@@ -221,27 +222,87 @@ export default function Settings() {
 
 // ── Engineer Alerts section (extracted from original Settings) ────────────────
 
-function EngineerAlerts({ showToast }: { showToast: (msg: string, type: "success" | "error") => void }) {
-  const [entries, setEntries]       = useState<Entry[]>([]);
-  const [exclusions, setExclusions] = useState<Map<string, Exclusion>>(new Map());
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState("");
-  const [filter, setFilter]         = useState<"all" | "excluded" | "active">("all");
-  const [notes, setNotes]           = useState<Record<string, string>>({});
+function EngineerAlerts({ showToast, isAdmin = false }: { showToast: (msg: string, type: "success" | "error") => void; isAdmin?: boolean }) {
+  const [entries, setEntries]             = useState<Entry[]>([]);
+  const [exclusions, setExclusions]       = useState<Map<string, Exclusion>>(new Map());
+  const [loading, setLoading]             = useState(true);
+  const [search, setSearch]               = useState("");
+  const [filter, setFilter]               = useState<"all" | "excluded" | "active">("all");
+  const [notes, setNotes]                 = useState<Record<string, string>>({});
+  const [engineerObjs, setEngineerObjs]   = useState<{ id: string; name: string }[]>([]);
+  const [addName, setAddName]             = useState("");
+  const [adding, setAdding]               = useState(false);
+  const [editingId, setEditingId]         = useState<string | null>(null);
+  const [editingName, setEditingName]     = useState("");
 
   useEffect(() => {
     (async () => {
-      const [eRes, xRes] = await Promise.all([fetch("/api/entries"), fetch("/api/exclusions")]);
+      const [eRes, xRes, engRes] = await Promise.all([
+        fetch("/api/entries"),
+        fetch("/api/exclusions"),
+        fetch("/api/engineers"),
+      ]);
       const eData: Entry[]     = await eRes.json().then((j) => Array.isArray(j) ? j : []);
       const xData: Exclusion[] = await xRes.json().then((j) => Array.isArray(j) ? j : []);
+      const engData            = await engRes.json().then((j) => Array.isArray(j) ? j : []);
       setEntries(eData);
       setExclusions(new Map(xData.map((x) => [x.engineer_name, x])));
       const nm: Record<string, string> = {};
       for (const x of xData) nm[x.engineer_name] = x.note || "";
       setNotes(nm);
+      setEngineerObjs(engData);
       setLoading(false);
     })();
   }, []);
+
+  async function refreshEngineers() {
+    const r = await fetch("/api/engineers");
+    const data = await r.json();
+    if (Array.isArray(data)) {
+      setEngineerObjs(data);
+      invalidateEngineerCache();
+    }
+  }
+
+  async function handleAdd() {
+    if (!addName.trim()) return;
+    setAdding(true);
+    try {
+      const r = await fetch("/api/engineers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: addName.trim() }),
+      });
+      const json = await r.json();
+      if (!r.ok) { showToast(json.error ?? "Failed to add", "error"); return; }
+      setAddName("");
+      await refreshEngineers();
+      showToast("Engineer added", "success");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleEditSave(id: string) {
+    if (!editingName.trim()) return;
+    const r = await fetch(`/api/engineers/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editingName.trim() }),
+    });
+    const json = await r.json();
+    if (!r.ok) { showToast(json.error ?? "Rename failed", "error"); return; }
+    setEditingId(null);
+    await refreshEngineers();
+    showToast("Engineer renamed", "success");
+  }
+
+  async function handleEngDelete(id: string, name: string) {
+    const r = await fetch(`/api/engineers/${id}`, { method: "DELETE" });
+    if (!r.ok) { showToast("Delete failed", "error"); return; }
+    await refreshEngineers();
+    showToast(`${name} removed`, "success");
+  }
 
   const engStatsMap = new Map<string, { km: number; standby: number }>();
   for (const e of entries) {
@@ -253,7 +314,10 @@ function EngineerAlerts({ showToast }: { showToast: (msg: string, type: "success
     }
   }
 
-  const activeEngineers = ENGINEERS.filter((e) => !exclusions.get(e)?.excluded);
+  const engNames = engineerObjs.length > 0 ? engineerObjs.map((e) => e.name) : ENGINEERS;
+  const engineerIdMap = new Map(engineerObjs.map((e) => [e.name, e.id]));
+
+  const activeEngineers = engNames.filter((e) => !exclusions.get(e)?.excluded);
   const avgKm = activeEngineers.length
     ? activeEngineers.reduce((s, e) => s + (engStatsMap.get(e)?.km || 0), 0) / activeEngineers.length : 0;
   const avgStandby = activeEngineers.length
@@ -283,7 +347,7 @@ function EngineerAlerts({ showToast }: { showToast: (msg: string, type: "success
   }
 
   const excludedCount = Array.from(exclusions.values()).filter((x) => x.excluded).length;
-  const displayed = ENGINEERS.filter((name) => {
+  const displayed = engNames.filter((name) => {
     const ex = exclusions.get(name);
     const isExcluded = ex?.excluded ?? false;
     if (filter === "excluded" && !isExcluded) return false;
@@ -311,6 +375,26 @@ function EngineerAlerts({ showToast }: { showToast: (msg: string, type: "success
         </div>
       </div>
 
+      {isAdmin && (
+        <div className="card flex items-center gap-3">
+          <span className="text-sm font-semibold text-[#1a2f5e] flex-shrink-0">Add Engineer</span>
+          <input
+            className="input flex-1"
+            placeholder="Full name…"
+            value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          />
+          <button
+            onClick={handleAdd}
+            disabled={adding || !addName.trim()}
+            className="btn-primary text-sm whitespace-nowrap"
+          >
+            {adding ? "Adding…" : "+ Add"}
+          </button>
+        </div>
+      )}
+
       <div className="card p-0 overflow-x-auto">
         {loading ? (
           <div className="p-8 text-center text-gray-400">Loading…</div>
@@ -325,18 +409,38 @@ function EngineerAlerts({ showToast }: { showToast: (msg: string, type: "success
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Standby Preview</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Exclude</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider min-w-[160px]">Note</th>
+                {isAdmin && <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Manage</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-blue-50">
               {displayed.map((name) => {
-                const stats      = engStatsMap.get(name) || { km: 0, standby: 0 };
-                const ex         = exclusions.get(name);
-                const isExcluded = ex?.excluded ?? false;
-                const distAlert  = !isExcluded && stats.km >= avgKm + 500;
+                const stats        = engStatsMap.get(name) || { km: 0, standby: 0 };
+                const ex           = exclusions.get(name);
+                const isExcluded   = ex?.excluded ?? false;
+                const distAlert    = !isExcluded && stats.km >= avgKm + 500;
                 const standbyAlert = !isExcluded && stats.standby >= avgStandby + 5;
+                const engId        = engineerIdMap.get(name);
+                const isEditing    = isAdmin && editingId !== null && editingId === engId;
                 return (
                   <tr key={name} className={`hover:bg-blue-50/30 transition-colors ${isExcluded ? "opacity-60" : ""}`}>
-                    <td className="px-4 py-3 font-medium text-[#1a2f5e]">{name}</td>
+                    <td className="px-4 py-3 font-medium text-[#1a2f5e]">
+                      {isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="input py-1 px-2 text-sm w-40"
+                            value={editingName}
+                            autoFocus
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter")  handleEditSave(editingId!);
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                          />
+                          <button onClick={() => handleEditSave(editingId!)} className="text-green-600 text-xs font-semibold hover:text-green-700">Save</button>
+                          <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs hover:text-gray-600">✕</button>
+                        </div>
+                      ) : name}
+                    </td>
                     <td className="px-4 py-3 font-bold">{stats.km.toLocaleString()}</td>
                     <td className="px-4 py-3 text-center">{stats.standby}</td>
                     <td className="px-4 py-3">
@@ -368,6 +472,26 @@ function EngineerAlerts({ showToast }: { showToast: (msg: string, type: "success
                         />
                       )}
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        {!isEditing && (
+                          <div className="flex items-center gap-3 whitespace-nowrap">
+                            <button
+                              onClick={() => { setEditingId(engId ?? null); setEditingName(name); }}
+                              className="text-[#1a2f5e] hover:text-[#c9a84c] text-xs font-semibold transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => engId && handleEngDelete(engId, name)}
+                              className="text-red-400 hover:text-red-600 text-xs font-semibold transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
