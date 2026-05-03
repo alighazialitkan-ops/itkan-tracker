@@ -232,11 +232,40 @@ function CityInput({ value, onChange }: { value: string; onChange: (v: string) =
   );
 }
 
-/* ── CarInput ── */
-function CarInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/* ── SiteInput ── */
+function SiteInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [copied, setCopied] = useState(false);
+  async function handleCopy() {
+    if (!value.trim()) return;
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <div className="relative">
+      <input type="text" className="input pr-8" value={value} placeholder="Site"
+        onChange={e => onChange(e.target.value)} />
+      {value && (
+        <button type="button" onClick={handleCopy} title="Copy site name"
+          className="absolute right-2 top-1/2 -translate-y-1/2 transition-colors">
+          {copied
+            ? <span className="text-green-500 text-xs font-bold">✓</span>
+            : <svg className="w-3.5 h-3.5 text-gray-300 hover:text-[#1a2f5e] transition-colors" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── CarPicker ── */
+function CarPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setRecent(getRecentCars()); }, []);
   useEffect(() => {
@@ -245,20 +274,49 @@ function CarInput({ value, onChange }: { value: string; onChange: (v: string) =>
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const filtered = recent.filter(c => c.toLowerCase().includes(value.toLowerCase()));
+  function select(car: string) { onChange(car); setQuery(""); setOpen(false); }
+  function clear() { onChange(""); setQuery(""); setTimeout(() => inputRef.current?.focus(), 0); }
+  function addNew() { if (query.trim()) select(query.trim()); }
+
+  const q = query.toLowerCase();
+  const filtered = recent.filter(c => !q || c.toLowerCase().includes(q));
 
   return (
     <div ref={ref} className="relative">
-      <input type="text" className="input" value={value} placeholder="Car plate or ID…"
-        onChange={e => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)} />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-40 overflow-y-auto">
-          {filtered.map(c => (
-            <button key={c} type="button" onMouseDown={() => { onChange(c); setOpen(false); }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{c}</button>
-          ))}
+      {value ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 bg-[#1a2f5e]/10 text-[#1a2f5e] text-xs px-2.5 py-1.5 rounded-full font-medium">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11a2 2 0 012 2v3m-6 11a2 2 0 002 2h6a2 2 0 002-2v-6a2 2 0 00-2-2h-6a2 2 0 00-2 2v6z" /></svg>
+            {value}
+            <button type="button" onMouseDown={clear} className="text-gray-400 hover:text-red-500 ml-0.5 leading-none">×</button>
+          </span>
         </div>
+      ) : (
+        <>
+          <input ref={inputRef} type="text" className="input" value={query} placeholder="Type or pick car…"
+            onChange={e => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addNew(); } }} />
+          {open && (filtered.length > 0 || query.trim()) && (
+            <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-44 overflow-y-auto">
+              {filtered.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 sticky top-0">Recent</div>
+                  {filtered.map(c => (
+                    <button key={c} type="button" onMouseDown={() => select(c)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{c}</button>
+                  ))}
+                </>
+              )}
+              {query.trim() && !recent.includes(query.trim()) && (
+                <button type="button" onMouseDown={addNew}
+                  className="w-full text-left px-3 py-2 text-sm text-[#1a2f5e] font-medium hover:bg-blue-50 border-t border-gray-100">
+                  + Add &ldquo;{query.trim()}&rdquo;
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -448,8 +506,7 @@ function AddEntryModal({
             </div>
             <div>
               <label className="label">Site</label>
-              <input type="text" className="input" value={site} placeholder="Site"
-                onChange={e => setSite(e.target.value)} />
+              <SiteInput value={site} onChange={setSite} />
             </div>
             <div>
               <label className="label">Machine</label>
@@ -493,7 +550,7 @@ function AddEntryModal({
           {/* Car */}
           <div>
             <label className="label">Car</label>
-            <CarInput value={car} onChange={setCar} />
+            <CarPicker value={car} onChange={setCar} />
           </div>
 
           {/* Description */}
