@@ -28,6 +28,7 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
   const [monthSel, setMonthSel]         = useState("");
   const [collapsed, setCollapsed]       = useState<Set<string>>(new Set());
   const [colSort, setColSort]           = useState<{ col: "km" | "sb" | "off"; dir: "asc" | "desc" } | null>(null);
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -179,6 +180,22 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
     fetchLogs();
   }
 
+  async function handleDeleteSelected() {
+    const count = selectedDays.length;
+    if (!confirm(`Delete ${count} selected ${count === 1 ? "day" : "days"} and all their entries? This cannot be undone.`)) return;
+    const results = await Promise.all(
+      selectedDays.map((id) => fetch(`/api/daily-logs/${id}`, { method: "DELETE" }))
+    );
+    const failed = results.filter((r) => !r.ok).length;
+    if (failed > 0) {
+      setToast({ msg: `${failed} day(s) failed to delete`, type: "error" });
+    } else {
+      setToast({ msg: `${count} ${count === 1 ? "day" : "days"} deleted`, type: "success" });
+    }
+    setSelectedDays([]);
+    fetchLogs();
+  }
+
   async function handleDeleteDay(log: DailyLog) {
     const n = log.details.length;
     if (!confirm(
@@ -282,6 +299,14 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
         <div className="flex items-center gap-2">
           <button onClick={expandAll}   className="btn-outline text-xs px-3 py-1.5">Expand All</button>
           <button onClick={collapseAll} className="btn-outline text-xs px-3 py-1.5">Collapse All</button>
+          {!isViewOnly && selectedDays.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded font-medium transition-colors"
+            >
+              Delete Selected ({selectedDays.length})
+            </button>
+          )}
           {!isViewOnly && (
             <button onClick={() => openAdd()} className="btn-primary text-sm">+ Add Entry</button>
           )}
@@ -302,6 +327,18 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
           <table className="w-full text-sm">
             <thead className="bg-[#f0f4ff] border-b border-blue-100">
               <tr>
+                {!isViewOnly && (
+                  <th className="px-3 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      className="w-3.5 h-3.5 cursor-pointer"
+                      checked={sortedLogs.length > 0 && sortedLogs.every((l) => selectedDays.includes(l.id))}
+                      onChange={(e) =>
+                        setSelectedDays(e.target.checked ? sortedLogs.map((l) => l.id) : [])
+                      }
+                    />
+                  </th>
+                )}
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Date / City</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider">Engineers</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleColSort("km")}>
@@ -336,6 +373,23 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                       className="bg-white border-t-2 border-blue-100 hover:bg-blue-50/20 cursor-pointer"
                       onClick={() => toggleCollapse(log.id)}
                     >
+                      {/* Checkbox */}
+                      {!isViewOnly && (
+                        <td className="px-3 py-3 w-8" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="w-3.5 h-3.5 cursor-pointer"
+                            checked={selectedDays.includes(log.id)}
+                            onChange={() =>
+                              setSelectedDays((prev) =>
+                                prev.includes(log.id)
+                                  ? prev.filter((id) => id !== log.id)
+                                  : [...prev, log.id]
+                              )
+                            }
+                          />
+                        </td>
+                      )}
                       {/* Date */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -400,6 +454,8 @@ export default function MainLog({ isViewOnly }: MainLogProps) {
                             key={`detail-${detail.id}`}
                             className="bg-[#f4f6fb] border-t border-blue-100 hover:bg-blue-50/50 transition-colors"
                           >
+                            {/* Spacer for checkbox column */}
+                            {!isViewOnly && <td className="px-3 py-2.5 w-8" />}
                             {/* City — indented with gold left accent */}
                             <td className="px-4 py-2.5 pl-10 border-l-4 border-[#c9a84c]">
                               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${badgeClass}`}>

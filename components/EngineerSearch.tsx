@@ -89,10 +89,10 @@ export default function EngineerSearch({ value, onChange, exclude = [], placehol
         onFocus={() => setOpen(true)}
       />
       {open && (filtered.length > 0 || frequent.length > 0) && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto">
+        <div className="absolute z-50 bottom-full left-0 right-0 mb-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
           {frequent.length > 0 && (
             <>
-              <div className="px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 sticky top-0">⭐ Frequent</div>
+              <div className="px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 sticky bottom-0">⭐ Frequent</div>
               {frequent.map((eng) => (
                 <button
                   key={eng}
@@ -107,7 +107,7 @@ export default function EngineerSearch({ value, onChange, exclude = [], placehol
           )}
           {rest.length > 0 && (
             <>
-              <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 sticky top-0">All engineers</div>
+              <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 sticky bottom-0">All engineers</div>
               {rest.map((eng) => (
                 <button
                   key={eng}

@@ -21,7 +21,10 @@
       "PowerShell(claude doctor *)",
       "Bash(where claude *)",
       "Bash(claude --version)",
-      "Bash(npm i *)"
+      "Bash(npm i *)",
+      "Bash(node -e \"require\\('twilio'\\)\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\YOGA 7S\\\\Desktop\\\\itkan-tracker\" -Recurse -Force | Select-Object FullName | ForEach-Object { $_.FullName } | Sort-Object)"
     ]
   }
 }
